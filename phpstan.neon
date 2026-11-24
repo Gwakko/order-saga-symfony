@@ -1,0 +1,35 @@
+includes:
+    - vendor/phpstan/phpstan-symfony/extension.neon
+    - vendor/phpstan/phpstan-phpunit/extension.neon
+    - vendor/phpstan/phpstan-phpunit/rules.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpat/phpat/extension.neon
+
+parameters:
+    level: max
+    paths:
+        - src
+        - phpstan
+        - tests
+    excludePaths:
+        analyse:
+            - tests/Fixtures/PhpStan
+    checkUninitializedProperties: true
+    symfony:
+        containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml
+
+services:
+    -
+        class: App\PhpStan\Architecture\LayerRulesTest
+        tags: [phpat.test]
+    -
+        class: App\PhpStan\Rules\StrictTypesDeclaredRule
+        tags: [phpstan.rules.rule]
+    -
+        class: App\PhpStan\Rules\NoSwitchRule
+        arguments:
+            onlyPathContaining: /src/
+        tags: [phpstan.rules.rule]
+    -
+        class: App\PhpStan\Rules\NoSystemClockRule
+        tags: [phpstan.rules.rule]
