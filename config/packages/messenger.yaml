@@ -1,22 +1,50 @@
 framework:
     messenger:
-        # Uncomment this (and the failed transport below) to send failed messages to this transport for later handling.
-        # failure_transport: failed
+        # A message that failed 5 retries ends up on the `failed` transport (EC-57); inspect with `messenger:failed:show`.
+        failure_transport: failed
 
         transports:
-            # https://symfony.com/doc/current/messenger.html#transport-configuration
-            # async: '%env(MESSENGER_TRANSPORT_DSN)%'
-            # failed: 'doctrine://default?queue_name=failed'
-            sync: 'sync://'
+            # Domain events published by the outbox relay (Redis Streams). Delivery is at least once: consumers deduplicate
+            # through the inbox (InboxGuard).
+            domain_events:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    stream: domain_events
+                    group: app
+                    auto_setup: true
+                retry_strategy:
+                    max_retries: 5
+                    delay: 1000
+                    multiplier: 2
+                    max_delay: 30000
+            failed:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    stream: domain_events_failed
+                    group: app
+                    auto_setup: true
 
         routing:
-            # Route your messages to the transports
-            # 'App\Message\YourMessage': async
+            App\Shared\Infrastructure\Outbox\OutboxMessage: domain_events
 
-# when@test:
-#    framework:
-#        messenger:
-#            transports:
-#                # replace with your transport name here (e.g., my_transport: 'in-memory://')
-#                # For more Messenger testing tools, see https://github.com/zenstruck/messenger-test
-#                async: 'in-memory://'
+when@test:
+    framework:
+        messenger:
+            transports:
+                domain_events:
+                    dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                    options:
+                        stream: domain_events_test
+                        group: app
+                        auto_setup: true
+                    retry_strategy:
+                        max_retries: 5
+                        delay: 1
+                        multiplier: 1
+                        max_delay: 1
+                failed:
+                    dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                    options:
+                        stream: domain_events_failed_test
+                        group: app
+                        auto_setup: true

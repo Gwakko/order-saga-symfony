@@ -1,0 +1,20 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: true
+
+    # Test-only Messenger consumers (T-I-36) live next to the tests, not in src/.
+    App\Tests\Integration\Support\Messenger\:
+        resource: '../tests/Integration/Support/Messenger/'
+
+    # Infrastructure under test is fetched from the container by class name.
+    App\Shared\Infrastructure\Persistence\DbalTransactionManager: ~
+    App\Shared\Infrastructure\Outbox\OutboxWriter: ~
+    App\Shared\Infrastructure\Outbox\OutboxRelay: ~
+    App\Shared\Infrastructure\Inbox\InboxGuard: ~
+    App\Ordering\Infrastructure\Persistence\DbalOrderRepository: ~
+    App\Inventory\Infrastructure\Persistence\DbalKeyInventory: ~
+    App\Inventory\Infrastructure\Persistence\DbalReservationRepository: ~
+    App\Payment\Infrastructure\Persistence\DbalPaymentRepository: ~
+    Doctrine\DBAL\Connection: '@doctrine.dbal.default_connection'

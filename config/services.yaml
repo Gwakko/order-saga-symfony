@@ -34,3 +34,10 @@ services:
     App\Payment\Application\Command\ChargePayment\ChargePaymentHandler:
         arguments:
             $chargeGuardSeconds: '%payment.charge_guard_seconds%'
+
+    # Time is UTC and goes through the PSR-20 port only (INV-12, T-ARCH-08).
+    Psr\Clock\ClockInterface:
+        class: Symfony\Component\Clock\NativeClock
+        arguments: ['UTC']
+
+    App\Shared\Infrastructure\Outbox\OutboxPublisher: '@App\Shared\Infrastructure\Outbox\MessengerOutboxPublisher'
