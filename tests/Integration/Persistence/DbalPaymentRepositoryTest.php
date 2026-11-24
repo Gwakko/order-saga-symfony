@@ -101,4 +101,27 @@ final class DbalPaymentRepositoryTest extends IntegrationTestCase
         self::assertSame([PaymentStatus::Unknown, PaymentStatus::Abandoned], array_map(static fn(Payment $p): PaymentStatus => $p->status, $found));
         self::assertCount(1, $this->infra->payments->findOpenUpdatedBefore($this->t0->modify('+5 minutes'), 1));
     }
+
+    /**
+     * The application saves, then keeps working with the same aggregate (record -> requestRefund -> markRefunded); each
+     * save must publish only the event of its own transition, not those of the saves before it.
+     */
+    public function testContinuingASavedAggregateDoesNotRepublishEarlierEvents(): void
+    {
+        $pending = $this->newPayment();
+        $this->infra->payments->insertOrGet($pending);
+
+        $succeeded = $pending->markSucceeded('ch_1', Currency::EUR, $this->t0->modify('+1 second'));
+        $this->infra->payments->save($succeeded);
+        $refundPending = $succeeded->requestRefund($this->t0->modify('+2 seconds'));
+        $this->infra->payments->save($refundPending);
+        $this->infra->payments->save($refundPending->markRefunded('rf_1', $this->t0->modify('+3 seconds')));
+
+        $events = array_map(static fn(mixed $type): string => is_string($type) ? $type : '', $this->connection->fetchFirstColumn('SELECT event_type FROM outbox_messages ORDER BY aggregate_version'));
+
+        self::assertSame(array_values(array_unique($events)), $events, 'no event was written twice');
+        self::assertContains('PaymentSucceeded', $events);
+        self::assertContains('PaymentRefunded', $events);
+        self::assertEquals(count($events), $this->connection->fetchOne('SELECT count(DISTINCT aggregate_version) FROM outbox_messages'), 'one row per aggregate version');
+    }
 }

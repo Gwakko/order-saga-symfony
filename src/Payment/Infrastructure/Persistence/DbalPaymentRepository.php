@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Payment\Infrastructure\Persistence;
 
 use App\Payment\Application\Port\PaymentRepository;
+use App\Payment\Domain\Event\PaymentEvent;
 use App\Payment\Domain\Payment;
 use App\Payment\Domain\PaymentStatus;
 use App\Shared\Application\Exception\ConcurrencyConflict;
@@ -101,7 +102,13 @@ final readonly class DbalPaymentRepository implements PaymentRepository
                 throw new ConcurrencyConflict('Payment', $payment->id->value);
             }
 
-            $this->outbox->append($payment->pendingEvents);
+            // One transition per save: the application saves a payment and then continues with the same aggregate
+            // (record, requestRefund, markRefunded), which still carries the events of the earlier saves. Only the
+            // events of this transition (version above the one just replaced) go to the outbox.
+            $this->outbox->append(array_values(array_filter(
+                $payment->pendingEvents,
+                static fn(PaymentEvent $event): bool => $event->version >= $payment->version,
+            )));
         });
     }
 

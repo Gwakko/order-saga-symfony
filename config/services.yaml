@@ -41,3 +41,24 @@ services:
         arguments: ['UTC']
 
     App\Shared\Infrastructure\Outbox\OutboxPublisher: '@App\Shared\Infrastructure\Outbox\MessengerOutboxPublisher'
+
+    # Payment gateway: HTTP adapter wrapped by the circuit breaker; breaker state shared through Redis (EC-31..EC-35).
+    App\Payment\Infrastructure\Gateway\HttpPaymentGateway:
+        arguments:
+            $baseUri: '%env(PAYMENT_GATEWAY_URL)%'
+
+    App\Shared\Infrastructure\Redis\RedisConnection:
+        arguments:
+            $url: '%env(REDIS_URL)%'
+
+    App\Payment\Infrastructure\Gateway\CircuitStateStore: '@App\Payment\Infrastructure\Gateway\RedisCircuitStateStore'
+
+    App\Payment\Infrastructure\Gateway\CircuitBreaker:
+        arguments:
+            $name: 'payment-gateway'
+
+    App\Payment\Infrastructure\Gateway\CircuitBreakingPaymentGateway:
+        arguments:
+            $inner: '@App\Payment\Infrastructure\Gateway\HttpPaymentGateway'
+
+    App\Payment\Application\Port\PaymentGateway: '@App\Payment\Infrastructure\Gateway\CircuitBreakingPaymentGateway'

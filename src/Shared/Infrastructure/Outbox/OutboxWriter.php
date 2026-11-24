@@ -41,7 +41,7 @@ final readonly class OutboxWriter
                     'aggregate_id' => $event->aggregateId(),
                     'aggregate_version' => $event->aggregateVersion(),
                     'event_type' => $normalized->eventType,
-                    'payload' => json_encode($normalized->payload, JSON_THROW_ON_ERROR),
+                    'payload' => json_encode($normalized->payload === [] ? new \stdClass() : $normalized->payload, JSON_THROW_ON_ERROR),
                     'occurred_at' => DbTimestamp::format($event->occurredAt()),
                 ],
             );

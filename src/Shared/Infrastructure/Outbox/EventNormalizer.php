@@ -8,7 +8,7 @@ use App\Shared\Domain\Event\DomainEvent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 /**
- * Turns the events of one module into outbox rows. Implemented per module (the domain stays free of serialisation
+ * Turns the events of one module into outbox rows and back. Implemented per module (the domain stays free of serialisation
  * attributes, 00_overview.md section 8 rule 7).
  */
 #[AutoconfigureTag('app.outbox.event_normalizer')]
@@ -17,4 +17,15 @@ interface EventNormalizer
     public function supports(DomainEvent $event): bool;
 
     public function normalize(DomainEvent $event): NormalizedEvent;
+
+    /**
+     * True when this module owns the stored message (by `aggregateType`).
+     */
+    public function supportsMessage(OutboxMessage $message): bool;
+
+    /**
+     * The inverse of `normalize()`: rebuilds the domain event from a stored or transported message, so a consumer
+     * can work with the event and not with a loose array.
+     */
+    public function denormalize(OutboxMessage $message): DomainEvent;
 }

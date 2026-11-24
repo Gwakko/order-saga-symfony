@@ -18,3 +18,10 @@ services:
     App\Inventory\Infrastructure\Persistence\DbalReservationRepository: ~
     App\Payment\Infrastructure\Persistence\DbalPaymentRepository: ~
     Doctrine\DBAL\Connection: '@doctrine.dbal.default_connection'
+    App\Shared\Infrastructure\Outbox\DomainEventCodec: ~
+    App\Ordering\Infrastructure\Projection\OrderProjection: ~
+    App\Ordering\Infrastructure\Persistence\DbalOrderReadModel: ~
+    App\Inventory\Infrastructure\Projection\ProductAvailabilityProjection: ~
+    App\Inventory\Infrastructure\Persistence\DbalProductReadModel: ~
+    App\Inventory\Infrastructure\Schedule\ExpireReservationsTickHandler: ~
+    App\Payment\Infrastructure\Schedule\ReconcilePaymentsTickHandler: ~

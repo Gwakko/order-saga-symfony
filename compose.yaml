@@ -1,3 +1,23 @@
+# Background workers share the php image. They are in the `workers` profile: `docker compose --profile workers up -d`.
+# They are not started by a plain `up`, because the integration tests share the database and the Redis streams and a
+# running relay would publish the rows those tests expect to find unpublished.
+x-worker: &worker
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+  working_dir: /app
+  volumes:
+    - .:/app
+  environment:
+    APP_ENV: dev
+  restart: unless-stopped
+  profiles: ["workers"]
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
 services:
   php:
     build:
@@ -61,6 +81,21 @@ services:
       - ./gateway-emulator:/app
     ports:
       - "8081:8081"
+
+  # Outbox -> Redis Stream (at least once; several copies may run, rows are locked per batch).
+  outbox-relay:
+    <<: *worker
+    command: ["php", "bin/console", "app:outbox:relay", "--sleep=200", "-v"]
+
+  # Stream consumers: projections (order_view, product_availability_view). Retries, then the `failed` transport.
+  messenger-consumer:
+    <<: *worker
+    command: ["php", "bin/console", "messenger:consume", "domain_events", "--time-limit=3600", "--memory-limit=256M", "-v"]
+
+  # Symfony Scheduler: ExpireReservations every 30 s, ReconcilePayments every 5 min.
+  scheduler:
+    <<: *worker
+    command: ["php", "bin/console", "messenger:consume", "scheduler_default", "--time-limit=3600", "--memory-limit=256M", "-v"]
 
 volumes:
   postgres_data:

@@ -3,6 +3,14 @@ framework:
         # A message that failed 5 retries ends up on the `failed` transport (EC-57); inspect with `messenger:failed:show`.
         failure_transport: failed
 
+        # Messages travel as JSON (Symfony Serializer), not as PHP serialize(): the stream stays readable and survives
+        # deployments that change classes. The body is the OutboxMessage (event id, aggregate, version, payload).
+        serializer:
+            default_serializer: messenger.transport.symfony_serializer
+            symfony_serializer:
+                format: json
+                context: {}
+
         transports:
             # Domain events published by the outbox relay (Redis Streams). Delivery is at least once: consumers deduplicate
             # through the inbox (InboxGuard).

@@ -45,7 +45,7 @@ final class MessengerFailureTransportTest extends IntegrationTestCase
 
     private function message(string $id, string $eventType = 'OrderPlaced'): OutboxMessage
     {
-        return new OutboxMessage($id, 'order', self::uuid(), 1, $eventType, ['k' => 'v'], '2026-05-01 10:00:00.000000+00:00');
+        return new OutboxMessage($id, 'test', self::uuid(), 1, $eventType, ['k' => 'v'], '2026-05-01 10:00:00.000000+00:00');
     }
 
     private function consume(int $limit): string
@@ -81,6 +81,14 @@ final class MessengerFailureTransportTest extends IntegrationTestCase
         self::assertSame([$good1, $good2], PoisonAwareOutboxHandler::$handled);
         self::assertSame(6, PoisonAwareOutboxHandler::$poisonAttempts);
         self::assertSame(1, $this->redis()->xlen(self::FAILED_STREAM), 'the poison message waits on the failure transport');
+
+        $failed = $this->redis()->xrange(self::FAILED_STREAM, '-', '+');
+        self::assertIsArray($failed);
+        $entry = array_values($failed)[0];
+        self::assertIsArray($entry);
+        self::assertIsString($entry['message']);
+        self::assertJson($entry['message'], 'the failed message keeps the JSON format');
+        self::assertStringNotContainsString('O:', $entry['message'], 'no PHP serialize() payload');
     }
 
     public function testRelayPublishesToTheRealTransportAndTheConsumerReceivesIt(): void
