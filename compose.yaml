@@ -55,6 +55,8 @@ services:
     image: php:8.5-cli-alpine
     working_dir: /app
     command: ["php", "-S", "0.0.0.0:8081", "-t", "public"]
+    environment:
+      PHP_CLI_SERVER_WORKERS: "8"
     volumes:
       - ./gateway-emulator:/app
     ports:
