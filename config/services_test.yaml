@@ -25,3 +25,12 @@ services:
     App\Inventory\Infrastructure\Persistence\DbalProductReadModel: ~
     App\Inventory\Infrastructure\Schedule\ExpireReservationsTickHandler: ~
     App\Payment\Infrastructure\Schedule\ReconcilePaymentsTickHandler: ~
+
+    # Functional tests (tests/Functional) reach the HTTP stack through the kernel; this port is replaced to simulate failures (EC-07).
+    App\Inventory\Infrastructure\Persistence\DbalProductCatalog: ~
+    App\Tests\Functional\Support\SwitchableProductCatalog: ~
+    App\Ordering\Application\Port\ProductCatalog: '@App\Tests\Functional\Support\SwitchableProductCatalog'
+    App\Shared\Infrastructure\Idempotency\IdempotencyStore:
+        alias: App\Shared\Infrastructure\Idempotency\DbalIdempotencyStore
+        public: true
+    App\Shared\Infrastructure\Idempotency\DbalIdempotencyStore: ~

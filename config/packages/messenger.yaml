@@ -3,6 +3,15 @@ framework:
         # A message that failed 5 retries ends up on the `failed` transport (EC-57); inspect with `messenger:failed:show`.
         failure_transport: failed
 
+        # Synchronous buses of the use cases (02_use_cases.md section 0): handlers are tagged in services.yaml through
+        # _instanceof, so the application layer carries no Messenger attributes. `event.bus` stays the default bus: the
+        # outbox consumers (`messenger:consume domain_events`) dispatch on it.
+        default_bus: event.bus
+        buses:
+            event.bus: ~
+            command.bus: ~
+            query.bus: ~
+
         # Messages travel as JSON (Symfony Serializer), not as PHP serialize(): the stream stays readable and survives
         # deployments that change classes. The body is the OutboxMessage (event id, aggregate, version, payload).
         serializer:
