@@ -24,6 +24,7 @@ final class SagaConfigurationPass implements CompilerPassInterface
             $activities,
             self::int($container->getParameter('inventory.reservation_ttl_seconds')),
             self::int($container->getParameter('payment.charge_guard_seconds')),
+            self::int($container->getParameter('temporal.refund_workflow.execution_timeout_seconds')),
         );
     }
 

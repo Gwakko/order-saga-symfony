@@ -38,4 +38,16 @@ interface OrderActivities
     /** @param string $reason a `FailureReason` value */
     #[ActivityMethod(name: 'MarkOrderManualReview')]
     public function markManualReview(string $orderId, string $reason, string $step): bool;
+
+    /** The cancellation flag in the database (the signal may have been lost: 03_saga.md section 2). */
+    #[ActivityMethod(name: 'IsCancellationRequested')]
+    public function isCancellationRequested(string $orderId): bool;
+
+    /** The flag was set before the saga did anything: `Pending` to `Cancelled`. */
+    #[ActivityMethod(name: 'CancelOrderBeforeStart')]
+    public function cancelBeforeStart(string $orderId): bool;
+
+    /** End of `RefundWorkflow`: `Refunding` to `Refunded`. */
+    #[ActivityMethod(name: 'FinishOrderRefund')]
+    public function finishRefund(string $orderId): bool;
 }

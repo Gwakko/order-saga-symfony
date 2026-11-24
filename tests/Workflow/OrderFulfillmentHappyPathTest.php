@@ -21,5 +21,6 @@ final class OrderFulfillmentHappyPathTest extends OrderSagaWorkflowTestCase
             ['ReserveKey', 'MarkOrderKeyReserved', 'ChargePayment', 'MarkOrderPaid', 'ConsumeReservation', 'CompleteOrder'],
             $this->scheduledActivities($run),
         );
+        self::assertSame(3, $this->guardChecks($run), 'The cancellation guard runs before the first step, before the charge and before consuming.');
     }
 }

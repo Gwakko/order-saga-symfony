@@ -17,6 +17,8 @@ use Temporal\Common\RetryOptions;
 final readonly class SagaConfiguration
 {
     public const string WORKFLOW_ID_PREFIX = 'order-';
+    public const string REFUND_WORKFLOW_ID_PREFIX = 'refund-';
+    public const int DEFAULT_REFUND_WORKFLOW_EXECUTION_TIMEOUT_SECONDS = 691200;
 
     /**
      * @param array<string, ActivitySettings> $activities keyed by `ActivityProfile` value
@@ -25,8 +27,9 @@ final readonly class SagaConfiguration
         public string $taskQueue,
         public int $workflowExecutionTimeoutSeconds,
         public array $activities,
+        public int $refundWorkflowExecutionTimeoutSeconds = self::DEFAULT_REFUND_WORKFLOW_EXECUTION_TIMEOUT_SECONDS,
     ) {
-        if ($taskQueue === '' || $workflowExecutionTimeoutSeconds <= 0) {
+        if ($taskQueue === '' || $workflowExecutionTimeoutSeconds <= 0 || $refundWorkflowExecutionTimeoutSeconds <= 0) {
             throw new InvalidSagaConfiguration('Task queue must be set and the workflow execution timeout positive.');
         }
 
@@ -48,6 +51,7 @@ final readonly class SagaConfiguration
         array $activities,
         int $reservationTtlSeconds,
         int $chargeGuardSeconds,
+        int $refundWorkflowExecutionTimeoutSeconds = self::DEFAULT_REFUND_WORKFLOW_EXECUTION_TIMEOUT_SECONDS,
     ): self {
         $parsed = [];
 
@@ -58,7 +62,7 @@ final readonly class SagaConfiguration
             $parsed[$name] = self::parseRow($name, $row);
         }
 
-        $configuration = new self($taskQueue, $workflowExecutionTimeoutSeconds, $parsed);
+        $configuration = new self($taskQueue, $workflowExecutionTimeoutSeconds, $parsed, $refundWorkflowExecutionTimeoutSeconds);
         $configuration->assertReservationOutlivesTheSteps($reservationTtlSeconds, $chargeGuardSeconds);
 
         return $configuration;
@@ -89,6 +93,16 @@ final readonly class SagaConfiguration
             ->withWorkflowId(self::WORKFLOW_ID_PREFIX . $orderId)
             ->withTaskQueue($this->taskQueue)
             ->withWorkflowExecutionTimeout(CarbonInterval::seconds($this->workflowExecutionTimeoutSeconds))
+            ->withWorkflowIdReusePolicy(IdReusePolicy::RejectDuplicate);
+    }
+
+    /** `refund-{orderId}`, reject duplicate: one refund workflow per order (INV-16, EC-61). */
+    public function refundWorkflowOptions(string $orderId): WorkflowOptions
+    {
+        return WorkflowOptions::new()
+            ->withWorkflowId(self::REFUND_WORKFLOW_ID_PREFIX . $orderId)
+            ->withTaskQueue($this->taskQueue)
+            ->withWorkflowExecutionTimeout(CarbonInterval::seconds($this->refundWorkflowExecutionTimeoutSeconds))
             ->withWorkflowIdReusePolicy(IdReusePolicy::RejectDuplicate);
     }
 

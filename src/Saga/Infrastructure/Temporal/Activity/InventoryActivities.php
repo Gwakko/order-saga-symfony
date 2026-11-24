@@ -25,4 +25,8 @@ interface InventoryActivities
     /** @return bool whether a reservation was released */
     #[ActivityMethod(name: 'ReleaseReservation')]
     public function releaseReservation(string $orderId): bool;
+
+    /** Refund path: the delivered key leaves circulation; an already revoked key counts as done (EC-63). @return string the key id */
+    #[ActivityMethod(name: 'RevokeSoldKey')]
+    public function revokeSoldKey(string $orderId): string;
 }

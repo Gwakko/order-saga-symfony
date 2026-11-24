@@ -11,6 +11,7 @@ use App\Saga\Infrastructure\Temporal\Config\SagaConfigurationHolder;
 use App\Saga\Infrastructure\Temporal\Hello\HelloActivityImpl;
 use App\Saga\Infrastructure\Temporal\Hello\HelloWorkflowImpl;
 use App\Saga\Infrastructure\Temporal\Workflow\OrderFulfillmentWorkflowImpl;
+use App\Saga\Infrastructure\Temporal\Workflow\RefundWorkflowImpl;
 use Symfony\Component\Dotenv\Dotenv;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Temporal\WorkerFactory;
@@ -37,7 +38,7 @@ SagaConfigurationHolder::set($configuration);
 $factory = WorkerFactory::create();
 $worker = $factory->newWorker($configuration->taskQueue);
 
-$worker->registerWorkflowTypes(HelloWorkflowImpl::class, OrderFulfillmentWorkflowImpl::class);
+$worker->registerWorkflowTypes(HelloWorkflowImpl::class, OrderFulfillmentWorkflowImpl::class, RefundWorkflowImpl::class);
 
 // Activities are registered by their implementation class and fetched from the container (public services).
 foreach ([HelloActivityImpl::class, InventoryActivitiesImpl::class, PaymentActivitiesImpl::class, OrderActivitiesImpl::class] as $activity) {

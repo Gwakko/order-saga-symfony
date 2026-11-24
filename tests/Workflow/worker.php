@@ -9,6 +9,7 @@ use App\Saga\Infrastructure\Temporal\Activity\PaymentActivitiesImpl;
 use App\Saga\Infrastructure\Temporal\Config\SagaConfiguration;
 use App\Saga\Infrastructure\Temporal\Config\SagaConfigurationHolder;
 use App\Saga\Infrastructure\Temporal\Workflow\OrderFulfillmentWorkflowImpl;
+use App\Saga\Infrastructure\Temporal\Workflow\RefundWorkflowImpl;
 use Symfony\Component\Dotenv\Dotenv;
 use Temporal\Testing\WorkerFactory;
 
@@ -28,7 +29,7 @@ SagaConfigurationHolder::set($configuration);
 
 $factory = WorkerFactory::create();
 $worker = $factory->newWorker($configuration->taskQueue);
-$worker->registerWorkflowTypes(OrderFulfillmentWorkflowImpl::class);
+$worker->registerWorkflowTypes(OrderFulfillmentWorkflowImpl::class, RefundWorkflowImpl::class);
 
 foreach ([InventoryActivitiesImpl::class, PaymentActivitiesImpl::class, OrderActivitiesImpl::class] as $activity) {
     $worker->registerActivity(

@@ -4,7 +4,11 @@
 # time by SagaConfigurationPass: reservation TTL > ReserveKey + ChargePayment + ConsumeReservation ScheduleToClose + charge guard.
 parameters:
     temporal.task_queue: order-saga
-    temporal.order_workflow.execution_timeout_seconds: 86400   # 24 h safety net
+    # Safety nets for a whole run. 03_saga.md says 24 h / 7 d, but the RefundPayment compensation alone may retry for 7 d
+    # before the saga parks the order for manual review (EC-47), so a shorter run timeout would kill the workflow first.
+    # Both are 8 days (M6.3, see docs/reports/M6.3.md "Отклонения").
+    temporal.order_workflow.execution_timeout_seconds: 691200
+    temporal.refund_workflow.execution_timeout_seconds: 691200
 
     # Client of consumers and the console (not the worker). The SDK default is no deadline and unlimited retries of an
     # unreachable server, which would keep a consumer from ever failing (EC-58).
@@ -55,6 +59,17 @@ parameters:
             non_retryable:
                 - App\Inventory\Domain\Exception\ReservationHasExpired
                 - App\Inventory\Application\Exception\KeyIsRevoked
+        # RefundWorkflow: takes the sold key out of circulation (a use case that only touches the database).
+        revoke_sold_key:
+            start_to_close: 5
+            schedule_to_close: 60
+            initial_interval: 1
+            backoff: 2
+            max_interval: 10
+            max_attempts: 0
+            non_retryable:
+                - App\Inventory\Application\Exception\ReservationNotFound
+                - App\Inventory\Application\Exception\KeyNotFound
         # Compensations: long deadlines, nothing is non-retryable.
         refund_payment:
             start_to_close: 15

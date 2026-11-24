@@ -93,8 +93,11 @@ services:
             $activities: '%temporal.activities%'
             $reservationTtlSeconds: '%inventory.reservation_ttl_seconds%'
             $chargeGuardSeconds: '%payment.charge_guard_seconds%'
+            $refundWorkflowExecutionTimeoutSeconds: '%temporal.refund_workflow.execution_timeout_seconds%'
 
     App\Ordering\Application\Port\OrderSagaStarter: '@App\Saga\Infrastructure\Temporal\TemporalOrderSagaStarter'
+    App\Ordering\Application\Port\OrderRefundStarter: '@App\Saga\Infrastructure\Temporal\TemporalOrderRefundStarter'
+    App\Ordering\Application\Port\OrderSagaSignals: '@App\Saga\Infrastructure\Temporal\TemporalOrderSagaSignals'
 
     # Activities are fetched from the container by the worker.
     App\Saga\Infrastructure\Temporal\Activity\InventoryActivitiesImpl:

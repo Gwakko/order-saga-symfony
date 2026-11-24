@@ -9,6 +9,8 @@ use App\Inventory\Application\Command\ConsumeReservation\ConsumeReservationOutpu
 use App\Inventory\Application\Command\ReleaseReservation\ReleaseReservationCommand;
 use App\Inventory\Application\Command\ReleaseReservation\ReleaseReservationOutput;
 use App\Inventory\Application\Command\ReserveKey\ReserveKeyCommand;
+use App\Inventory\Application\Command\RevokeSoldKey\RevokeSoldKeyCommand;
+use App\Inventory\Application\Command\RevokeSoldKey\RevokeSoldKeyOutput;
 use App\Inventory\Application\Command\ReserveKey\ReserveKeyOutput;
 use App\Ordering\Application\Port\OrderRepository;
 use App\Shared\Domain\Identifier\OrderId;
@@ -37,5 +39,10 @@ final readonly class InventoryActivitiesImpl implements InventoryActivities
     public function releaseReservation(string $orderId): bool
     {
         return $this->commands->execute(new ReleaseReservationCommand($orderId), ReleaseReservationOutput::class)->released;
+    }
+
+    public function revokeSoldKey(string $orderId): string
+    {
+        return $this->commands->execute(new RevokeSoldKeyCommand($orderId), RevokeSoldKeyOutput::class)->keyId;
     }
 }

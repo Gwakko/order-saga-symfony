@@ -96,6 +96,28 @@ final class SagaConfigurationTest extends TestCase
         self::assertSame(86400, $options->workflowExecutionTimeout->s);
     }
 
+    public function testRefundWorkflowIdIsRefundPrefixedAndDuplicatesAreRejected(): void
+    {
+        $options = $this->build(900)->refundWorkflowOptions('0194f3a0-0000-7000-8000-000000000001');
+
+        self::assertSame('refund-0194f3a0-0000-7000-8000-000000000001', $options->workflowId);
+        self::assertSame('order-saga', $options->taskQueue);
+        self::assertSame(IdReusePolicy::RejectDuplicate->value, $options->workflowIdReusePolicy);
+        self::assertSame(691200, $options->workflowExecutionTimeout->s);
+    }
+
+    /** The compensation may retry for 7 days before the saga parks the order, so the run timeouts must outlast that. */
+    public function testRunTimeoutsOutlastTheLongestCompensation(): void
+    {
+        $parameters = $this->parameters();
+        $activities = $this->activities();
+        $refundDeadline = $activities['refund_payment']['schedule_to_close'];
+
+        self::assertIsInt($refundDeadline);
+        self::assertGreaterThan($refundDeadline, $parameters['temporal.order_workflow.execution_timeout_seconds']);
+        self::assertGreaterThan($refundDeadline, $parameters['temporal.refund_workflow.execution_timeout_seconds']);
+    }
+
     public function testStartToCloseAboveScheduleToCloseIsRejected(): void
     {
         $activities = $this->activities();

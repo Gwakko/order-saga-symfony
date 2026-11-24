@@ -16,7 +16,6 @@ use App\Shared\Domain\Identifier\OrderId;
 use App\Shared\Domain\Identifier\ProductId;
 use App\Shared\Domain\Identifier\ProductKeyId;
 use App\Shared\Domain\Identifier\ReservationId;
-use App\Shared\Infrastructure\Id\SymfonyUuidGenerator;
 use PHPUnit\Framework\Attributes\Group;
 use Temporal\Workflow\WorkflowRunInterface;
 
@@ -166,10 +165,5 @@ final class OrderFulfillmentFailureTest extends OrderSagaWorkflowTestCase
             $this->scheduledActivities($run),
         );
         self::assertSame('CurrencyMismatch', $this->compensationReason($run));
-    }
-
-    private function uuid(): string
-    {
-        return (new SymfonyUuidGenerator())->next();
     }
 }

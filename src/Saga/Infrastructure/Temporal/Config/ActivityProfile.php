@@ -14,6 +14,7 @@ enum ActivityProfile: string
     case OrderStep = 'order_step';
     case ChargePayment = 'charge_payment';
     case ConsumeReservation = 'consume_reservation';
+    case RevokeSoldKey = 'revoke_sold_key';
     case RefundPayment = 'refund_payment';
     case ReleaseReservation = 'release_reservation';
 }
