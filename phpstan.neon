@@ -42,3 +42,6 @@ services:
     -
         class: App\PhpStan\Rules\ReadonlyValueObjectRule
         tags: [phpstan.rules.rule]
+    -
+        class: App\PhpStan\Rules\WorkflowDeterminismRule
+        tags: [phpstan.rules.rule]

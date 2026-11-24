@@ -1,0 +1,25 @@
+# RoadRunner for the workflow tests (M6.2): a test worker with mocked activities against `temporal-test-server`.
+# Started by WorkflowTestEnvironment; the `kv` store `test` keeps the activity mocks (ActivityMocker).
+version: "3"
+
+rpc:
+  listen: tcp://127.0.0.1:6001
+
+server:
+  command: "php worker.php"
+  relay: pipes
+
+temporal:
+  address: 127.0.0.1:7233
+  activities:
+    num_workers: 2
+
+kv:
+  test:
+    driver: memory
+    config:
+      interval: 10
+
+logs:
+  mode: production
+  level: warn

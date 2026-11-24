@@ -76,6 +76,30 @@ services:
     App\Saga\Infrastructure\Temporal\TemporalClientFactory:
         arguments:
             $address: '%env(TEMPORAL_ADDRESS)%'
+            $callTimeoutSeconds: '%temporal.client.call_timeout_seconds%'
+            $maxAttempts: '%temporal.client.max_attempts%'
 
     App\Saga\Infrastructure\Temporal\Hello\HelloActivityImpl:
+        public: true
+
+    # Temporal saga (M6.2): validated timeout table, client, starter. The worker hands the configuration to the workflow
+    # through SagaConfigurationHolder (bin/temporal-worker.php).
+    App\Saga\Infrastructure\Temporal\Config\SagaConfiguration:
+        public: true
+        factory: ['App\Saga\Infrastructure\Temporal\Config\SagaConfiguration', 'fromParameters']
+        arguments:
+            $taskQueue: '%temporal.task_queue%'
+            $workflowExecutionTimeoutSeconds: '%temporal.order_workflow.execution_timeout_seconds%'
+            $activities: '%temporal.activities%'
+            $reservationTtlSeconds: '%inventory.reservation_ttl_seconds%'
+            $chargeGuardSeconds: '%payment.charge_guard_seconds%'
+
+    App\Ordering\Application\Port\OrderSagaStarter: '@App\Saga\Infrastructure\Temporal\TemporalOrderSagaStarter'
+
+    # Activities are fetched from the container by the worker.
+    App\Saga\Infrastructure\Temporal\Activity\InventoryActivitiesImpl:
+        public: true
+    App\Saga\Infrastructure\Temporal\Activity\PaymentActivitiesImpl:
+        public: true
+    App\Saga\Infrastructure\Temporal\Activity\OrderActivitiesImpl:
         public: true

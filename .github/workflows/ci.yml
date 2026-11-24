@@ -45,6 +45,8 @@ jobs:
       DATABASE_URL: postgresql://app:app@127.0.0.1:5432/app?serverVersion=17&charset=utf8
       REDIS_URL: redis://127.0.0.1:6379
       MESSENGER_TRANSPORT_DSN: redis://127.0.0.1:6379/messages
+      # Dev server for the consumer integration test (T-I-20). Port 7233 stays free for temporal-test-server (make test-wf).
+      TEMPORAL_ADDRESS: 127.0.0.1:7234
 
     steps:
       - name: Checkout
@@ -54,7 +56,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: intl, pdo_pgsql, redis, sockets, zip, opcache
+          extensions: intl, pdo_pgsql, redis, sockets, zip, opcache, grpc, protobuf
           tools: composer:v2
           coverage: none
 
@@ -71,6 +73,18 @@ jobs:
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
+
+      - name: Start Temporal dev server (T-I-20)
+        run: |
+          docker run -d --name temporal-dev -p 7234:7233 temporalio/temporal:1.10.1 server start-dev --ip 0.0.0.0
+          for i in $(seq 30); do (echo > /dev/tcp/127.0.0.1/7234) 2>/dev/null && break; sleep 1; done
+
+      - name: Install RoadRunner and temporal-test-server (workflow tests, make test-wf)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./vendor/bin/rr get-binary --location /usr/local/bin || (./vendor/bin/rr get-binary && sudo mv rr /usr/local/bin/rr)
+          php bin/install-temporal-test-server.php
 
       - name: Run checks
         run: make ci PHP=

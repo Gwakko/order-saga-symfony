@@ -1,0 +1,79 @@
+# Saga timeouts and retries (03_saga.md section 3). Starting values of a learning project, not measurements.
+# Every duration is whole SECONDS here; the SDK treats a bare integer as milliseconds, so the conversion to
+# `DateInterval` is done in one place (SagaConfiguration). The TTL invariant (T-CFG-01) is checked at container compile
+# time by SagaConfigurationPass: reservation TTL > ReserveKey + ChargePayment + ConsumeReservation ScheduleToClose + charge guard.
+parameters:
+    temporal.task_queue: order-saga
+    temporal.order_workflow.execution_timeout_seconds: 86400   # 24 h safety net
+
+    # Client of consumers and the console (not the worker). The SDK default is no deadline and unlimited retries of an
+    # unreachable server, which would keep a consumer from ever failing (EC-58).
+    temporal.client.call_timeout_seconds: 10
+    temporal.client.max_attempts: 3
+
+    # max_attempts 0 = unlimited within ScheduleToClose. backoff is a whole number (2 = doubling).
+    temporal.activities:
+        reserve_key:
+            start_to_close: 5
+            schedule_to_close: 60
+            initial_interval: 1
+            backoff: 2
+            max_interval: 10
+            max_attempts: 0
+            non_retryable:
+                - App\Inventory\Application\Exception\OutOfStock
+                - App\Shared\Application\Exception\OrderNotFound
+        # MarkOrder*, CompleteOrder, FailOrder, StartOrderCompensation, FinishOrderCompensation, MarkOrderManualReview
+        order_step:
+            start_to_close: 5
+            schedule_to_close: 60
+            initial_interval: 1
+            backoff: 2
+            max_interval: 10
+            max_attempts: 0
+            non_retryable:
+                - App\Ordering\Domain\Exception\IllegalOrderTransition
+        charge_payment:
+            start_to_close: 15   # the gateway HTTP timeout (10 s) must stay below this
+            schedule_to_close: 300
+            initial_interval: 2
+            backoff: 2
+            max_interval: 30
+            max_attempts: 0
+            non_retryable:
+                - App\Payment\Application\Exception\PaymentDeclined
+                - App\Payment\Application\Exception\AmountMismatch
+                - App\Shared\Domain\Exception\CurrencyMismatch
+                - App\Payment\Application\Exception\ReservationNotActive
+        consume_reservation:
+            start_to_close: 5
+            schedule_to_close: 60
+            initial_interval: 1
+            backoff: 2
+            max_interval: 10
+            max_attempts: 0
+            non_retryable:
+                - App\Inventory\Domain\Exception\ReservationHasExpired
+                - App\Inventory\Application\Exception\KeyIsRevoked
+        # Compensations: long deadlines, nothing is non-retryable.
+        refund_payment:
+            start_to_close: 15
+            schedule_to_close: 604800   # 7 days
+            initial_interval: 5
+            backoff: 2
+            max_interval: 300
+            max_attempts: 0
+            non_retryable: []
+        release_reservation:
+            start_to_close: 5
+            schedule_to_close: 86400   # 1 day
+            initial_interval: 1
+            backoff: 2
+            max_interval: 60
+            max_attempts: 0
+            non_retryable: []
+
+when@test:
+    parameters:
+        # Nobody polls this queue: integration tests may start workflows without the compose worker picking them up.
+        temporal.task_queue: order-saga-test

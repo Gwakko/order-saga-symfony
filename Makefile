@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 PHP ?= docker compose exec -T php
 
-.PHONY: help up down install phpstan cs cs-fix test-unit test-int test-wf test-func ci
+.PHONY: help up down install wf-install phpstan cs cs-fix test-unit test-int test-wf test-func ci
 
 help:
 	@grep -E "^[a-z-]+:" Makefile | cut -d: -f1
@@ -14,6 +14,10 @@ down:
 
 install:
 	$(PHP) composer install --no-interaction
+
+# One-off, explicit: downloads the pinned temporal-test-server (about 83 MB) into var/temporal-test-server/. test-wf never downloads.
+wf-install:
+	$(PHP) php bin/install-temporal-test-server.php
 
 phpstan:
 	$(PHP) bin/console cache:warmup --env=dev -q
