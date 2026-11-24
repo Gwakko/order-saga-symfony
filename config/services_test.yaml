@@ -34,3 +34,10 @@ services:
         alias: App\Shared\Infrastructure\Idempotency\DbalIdempotencyStore
         public: true
     App\Shared\Infrastructure\Idempotency\DbalIdempotencyStore: ~
+
+    # SQL counting for the N+1 test (T-F-32): the stock DBAL logging middleware reports into a recorder.
+    App\Tests\Functional\Support\SqlRecorder: ~
+    app.test.sql_logging_middleware:
+        class: Doctrine\DBAL\Logging\Middleware
+        arguments: ['@App\Tests\Functional\Support\SqlRecorder']
+        tags: [doctrine.middleware]

@@ -46,6 +46,31 @@ final class ProductAvailabilityTest extends IntegrationTestCase
         self::assertNull($this->readModel->find(ProductId::fromString(self::uuid())));
     }
 
+    #[Group('T-F-32')]
+    public function testFindManyReturnsTheExistingRowsOfAllIdsInOneStatement(): void
+    {
+        $first = $this->seedProduct(price: 1000);
+        $second = $this->seedProduct(price: 2000);
+        $missing = ProductId::fromString(self::uuid());
+
+        foreach ([$first, $second] as $product) {
+            $this->connection->executeStatement(
+                "INSERT INTO product_availability_view (product_id, name, price_amount, price_currency, available, updated_at)
+                 VALUES (:id, 'Game', 1000, 'EUR', 2, now())",
+                ['id' => $product->id->value],
+            );
+        }
+
+        $found = $this->readModel->findMany([$first->id, $missing, $second->id]);
+        $ids = array_map(static fn(ProductAvailabilityOutput $p): string => $p->productId, $found);
+        sort($ids);
+        $expected = [$first->id->value, $second->id->value];
+        sort($expected);
+
+        self::assertSame($expected, $ids);
+        self::assertSame([], $this->readModel->findMany([]));
+    }
+
     public function testAvailabilityFollowsReservationsExpiryAndRepeats(): void
     {
         $product = $this->seedProduct();

@@ -13,4 +13,13 @@ use App\Shared\Domain\Identifier\ProductId;
 interface ProductReadModel
 {
     public function find(ProductId $id): ?ProductAvailabilityOutput;
+
+    /**
+     * One read for many products; ids without a row are absent from the result.
+     *
+     * @param list<ProductId> $ids
+     *
+     * @return list<ProductAvailabilityOutput>
+     */
+    public function findMany(array $ids): array;
 }

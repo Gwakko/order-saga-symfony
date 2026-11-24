@@ -9,6 +9,8 @@
 parameters:
     inventory.reservation_ttl_seconds: 900
     payment.charge_guard_seconds: 60
+    # Introspection is a development aid: off in prod (M7.2, EC-82).
+    graphql.introspection_enabled: true
 
 services:
     # default configuration for services in *this* file
@@ -116,3 +118,11 @@ services:
             $resetter: '@services_resetter'
     App\Saga\Infrastructure\Temporal\Worker\WorkerConnectionGuard:
         public: true
+
+    # GraphQL (M7.1): the schema is read from SDL and built once; resolvers go through query.bus.
+    GraphQL\Type\Schema:
+        factory: ['@App\Ordering\Infrastructure\GraphQL\GraphQlSchemaFactory', 'create']
+
+when@prod:
+    parameters:
+        graphql.introspection_enabled: false

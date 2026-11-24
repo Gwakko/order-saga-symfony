@@ -22,4 +22,9 @@ final class InMemoryProductReadModel implements ProductReadModel
     {
         return $this->products[$id->value] ?? null;
     }
+
+    public function findMany(array $ids): array
+    {
+        return array_values(array_filter(array_map($this->find(...), $ids)));
+    }
 }

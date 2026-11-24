@@ -9,6 +9,7 @@ use App\Inventory\Application\Query\GetProductAvailability\ProductAvailabilityOu
 use App\Shared\Application\Output\MoneyOutput;
 use App\Shared\Domain\Identifier\ProductId;
 use App\Shared\Infrastructure\Persistence\Row;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 
 final readonly class DbalProductReadModel implements ProductReadModel
@@ -26,6 +27,29 @@ final readonly class DbalProductReadModel implements ProductReadModel
             return null;
         }
 
+        return self::fromRow($raw);
+    }
+
+    public function findMany(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT product_id, name, price_amount, price_currency, available FROM product_availability_view WHERE product_id IN (:ids)',
+            ['ids' => array_map(static fn(ProductId $id): string => $id->value, $ids)],
+            ['ids' => ArrayParameterType::STRING],
+        );
+
+        return array_map(self::fromRow(...), $rows);
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     */
+    private static function fromRow(array $raw): ProductAvailabilityOutput
+    {
         $row = new Row($raw);
 
         return new ProductAvailabilityOutput(

@@ -1,0 +1,81 @@
+"""
+Read-only API (U2: no mutations; orders are placed, cancelled and refunded through REST).
+Every request needs the X-Customer-Id header, as in REST.
+"""
+schema {
+  query: Query
+}
+
+type Query {
+  """The caller's own order. Someone else's or a missing order is the same ORDER_NOT_FOUND error (EC-70)."""
+  order(id: ID!): Order
+
+  """The caller's orders, newest first, keyset pagination (pass `nextCursor` back as `cursor`)."""
+  myOrders(status: OrderStatus, limit: Int = 20, cursor: String): OrderPage!
+
+  """Catalog entry with the number of keys that can still be reserved."""
+  product(id: ID!): Product
+}
+
+"""ISO-8601 instant, UTC, milliseconds, explicit +00:00."""
+scalar DateTime
+
+enum OrderStatus {
+  PENDING
+  KEY_RESERVED
+  PAID
+  COMPLETED
+  COMPENSATING
+  CANCELLED
+  FAILED
+  REFUNDING
+  REFUNDED
+  MANUAL_REVIEW
+}
+
+"""Integer amount in minor units (cents), never a float."""
+type Money {
+  amount: Int!
+  currency: String!
+}
+
+type Order {
+  orderId: ID!
+  status: OrderStatus!
+  price: Money!
+  productId: ID!
+  failureReason: String
+  cancellationRequested: Boolean!
+  """The delivered key, only while the order is COMPLETED, otherwise null (INV-17, EC-83)."""
+  keyCode: String
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  completedAt: DateTime
+  """Loaded in one batch for all orders of a response (EC-84). Null while the read model has not caught up."""
+  product: Product
+}
+
+"""A row of the order list; the key is never part of a list (INV-17)."""
+type OrderSummary {
+  orderId: ID!
+  status: OrderStatus!
+  price: Money!
+  productId: ID!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  """Loaded in one batch for all rows of a response (EC-84)."""
+  product: Product
+}
+
+type OrderPage {
+  items: [OrderSummary!]!
+  """Null on the last page."""
+  nextCursor: String
+}
+
+type Product {
+  productId: ID!
+  name: String!
+  price: Money!
+  available: Int!
+}
