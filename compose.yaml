@@ -97,5 +97,27 @@ services:
     <<: *worker
     command: ["php", "bin/console", "messenger:consume", "scheduler_default", "--time-limit=3600", "--memory-limit=256M", "-v"]
 
+  # Temporal worker: RoadRunner (`rr serve`) holds the gRPC connection and starts `bin/temporal-worker.php` (Symfony Kernel).
+  # Not in the `workers` profile: the hello spike needs it with a plain `docker compose up -d temporal temporal-worker`.
+  temporal-worker:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      APP_ENV: dev
+      TEMPORAL_ADDRESS: temporal:7233
+    command: ["rr", "serve", "-c", ".rr.yaml"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      temporal:
+        condition: service_started
+
 volumes:
   postgres_data:

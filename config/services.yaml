@@ -71,3 +71,11 @@ services:
             $inner: '@App\Payment\Infrastructure\Gateway\HttpPaymentGateway'
 
     App\Payment\Application\Port\PaymentGateway: '@App\Payment\Infrastructure\Gateway\CircuitBreakingPaymentGateway'
+
+    # Temporal (M6.1). The client needs ext-grpc; the worker (bin/temporal-worker.php) fetches activities from the container.
+    App\Saga\Infrastructure\Temporal\TemporalClientFactory:
+        arguments:
+            $address: '%env(TEMPORAL_ADDRESS)%'
+
+    App\Saga\Infrastructure\Temporal\Hello\HelloActivityImpl:
+        public: true
