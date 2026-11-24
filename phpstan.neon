@@ -33,3 +33,12 @@ services:
     -
         class: App\PhpStan\Rules\NoSystemClockRule
         tags: [phpstan.rules.rule]
+    -
+        class: App\PhpStan\Rules\DomainNoFrameworkAttributesRule
+        tags: [phpstan.rules.rule]
+    -
+        class: App\PhpStan\Rules\NoFloatInDomainRule
+        tags: [phpstan.rules.rule]
+    -
+        class: App\PhpStan\Rules\ReadonlyValueObjectRule
+        tags: [phpstan.rules.rule]
