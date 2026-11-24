@@ -92,6 +92,7 @@
 - **Не делать:** контроллеры, Messenger-конфиг.
 
 ### M3.3 Команды саги
+- **Предварительно (решение пользователя 2026-11-24, см. `01_domain.md` §5 последний пункт):** в `Payment` добавить переход `markCapturedWithMismatch(chargeId, MismatchReason)` из `Pending`/`Unknown`/`Abandoned` в `RefundPending`, событие `PaymentCapturedWithMismatch`, обновить матрицу переходов в тестах M2.4 (новые допустимые пары, остальные остаются недопустимыми), добавить тесты T-U-35, T-U-36 на уровне домена и на уровне handler. Затем handlers команд.
 - **Вход:** `02_use_cases.md` §2; `03_saga.md` §4, §6; EC-10, EC-17, EC-22…EC-24, EC-27, EC-32, EC-36, EC-37, EC-45, EC-49, EC-63, EC-81.
 - **На выходе:** handlers всех команд из §2 в своих модулях; T-U-30…T-U-39.
 - **Проверка:** `make phpstan && make test-unit`.

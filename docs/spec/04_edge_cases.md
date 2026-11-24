@@ -59,7 +59,7 @@
 | EC-33 | Half-open и восстановление | прошло 30 с `Open`; эмулятор снова здоров | ровно 1 пробный вызов (параллельные получают `CircuitOpen`); успех → `Closed`; неудача → снова `Open` на 30 с | — | T-U-42, T-I-22 `RedisCircuitStateStoreTest::testSingleProbeAcrossProcesses` |
 | EC-34 | Breaker открыт дольше шага | `Open` всё время ScheduleToClose `ChargePayment` (5 мин, время сдвигается тест-сервером) | исчерпание → компенсации → `Failed(PaymentUnavailable)`; платёж `Abandoned`; списаний 0 | INV-08 | T-W-07 |
 | EC-35 | Redis недоступен для breaker | `RedisCircuitStateStore` бросает исключение соединения | breaker деградирует в `Closed` (вызов пропускается в шлюз), лог `warning`; HTTP-таймаут остаётся защитой | — | T-U-43 (store-заглушка, бросающая исключение) |
-| EC-36 | Валюта в ответе шлюза другая | эмулятор возвращает `currency: USD` для EUR-платежа | `CurrencyMismatch` → платёж `RefundPending` → сага компенсирует (refund) → `Failed(CurrencyMismatch)` | INV-02 | T-U-35, T-W-08 |
+| EC-36 | Валюта в ответе шлюза другая | эмулятор возвращает `currency: USD` для EUR-платежа | `CurrencyMismatch` (из `markSucceeded`) → handler вызывает `markCapturedWithMismatch` → платёж `RefundPending` → сага компенсирует (refund) → `Failed(CurrencyMismatch)` | INV-02 | T-U-35, T-W-08 |
 | EC-37 | Сумма в ответе шлюза другая | эмулятор возвращает другую `amount` | как EC-36 (`AmountMismatch` трактуется аналогично, refund) | INV-18 | T-U-36 |
 
 ## E. Отмена и компенсации

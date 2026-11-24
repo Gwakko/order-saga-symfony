@@ -153,17 +153,17 @@ minorUnits(): int  → match: все четыре = 2
 
 | from \ to | Unknown | Succeeded | Declined | Abandoned | RefundPending | Refunded |
 |---|---|---|---|---|---|---|
-| Pending | `+ markUnknown` (таймаут/обрыв) | `+ markSucceeded` | `+ markDeclined` | `+ abandon` (компенсация до ответа) | | |
-| Unknown | (повтор = no-op) | `+ markSucceeded` (по проверке статуса) | `+ markDeclined` | `+ abandon` | | |
+| Pending | `+ markUnknown` (таймаут/обрыв) | `+ markSucceeded` | `+ markDeclined` | `+ abandon` (компенсация до ответа) | `+ markCapturedWithMismatch` | |
+| Unknown | (повтор = no-op) | `+ markSucceeded` (по проверке статуса) | `+ markDeclined` | `+ abandon` | `+ markCapturedWithMismatch` | |
 | Succeeded | | | | | `+ requestRefund` | |
 | RefundPending | | | | | | `+ markRefunded` |
-| Abandoned | | `+ markSucceeded` (поздний успех, только сверка) | | | | |
+| Abandoned | | `+ markSucceeded` (поздний успех, только сверка) | | | `+ markCapturedWithMismatch` | |
 | Declined, Refunded | | | | | | |
 
 - `Abandoned → Succeeded` разрешён только чтобы зафиксировать факт позднего успеха; сразу после него сверка делает `requestRefund` (EC-28).
 - INV-06: один `Payment` на заказ (unique `payments(order_id)`); `markSucceeded(chargeId)` повторно с тем же `chargeId` — no-op, с другим → `PaymentAlreadySucceeded`; refund только из `Succeeded`, сумма refund = `amount` (полный возврат).
 - INV-18: сумма списания берётся из `Order.price`, а не из входа workflow (EC-81).
-- Валюта ответа шлюза ≠ `amount.currency` → `markSucceeded` бросает `CurrencyMismatch`; handler переводит платёж в `RefundPending` и сага компенсирует (EC-36).
+- Валюта или сумма ответа шлюза не совпадают с `amount` (EC-36, EC-37): деньги списаны, платёж нельзя считать успешным. Решение пользователя 2026-11-24: `markSucceeded` по-прежнему бросает `CurrencyMismatch`/`AmountMismatch` и состояние не меняет; handler ловит ошибку и вызывает `markCapturedWithMismatch(chargeId, MismatchReason)`, который из `Pending`/`Unknown`/`Abandoned` переводит платёж сразу в `RefundPending`, сохраняя `gatewayChargeId` и причину в `lastError`. Возврат полный, на сумму фактического списания из ответа шлюза нельзя (INV-18), поэтому refund просит у шлюза возврат по `chargeId`, а расхождение суммы пишется в событие `PaymentCapturedWithMismatch` для сверки. Сага компенсирует и завершает заказ `Failed(CurrencyMismatch|AmountMismatch)`. Повтор с тем же `chargeId`: no-op.
 
 ## 6. Доменные события
 
