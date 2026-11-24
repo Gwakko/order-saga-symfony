@@ -23,16 +23,17 @@ use PHPUnit\Framework\TestCase;
 final class OrderTransitionTest extends TestCase
 {
     /**
-     * Transcribed by hand from the spec table (not derived from the code under test).
+     * Transcribed by hand from the spec table (not derived from the code under test). M6.4 added the arrows into
+     * `ManualReview` from `Pending`, `KeyReserved` and `Paid` (a step failed for a non-business reason).
      *
      * @return array<string, list<OrderStatus>>
      */
     private static function allowed(): array
     {
         return [
-            'pending' => [OrderStatus::KeyReserved, OrderStatus::Cancelled, OrderStatus::Failed],
-            'key_reserved' => [OrderStatus::Paid, OrderStatus::Compensating],
-            'paid' => [OrderStatus::Completed, OrderStatus::Compensating],
+            'pending' => [OrderStatus::KeyReserved, OrderStatus::Cancelled, OrderStatus::Failed, OrderStatus::ManualReview],
+            'key_reserved' => [OrderStatus::Paid, OrderStatus::Compensating, OrderStatus::ManualReview],
+            'paid' => [OrderStatus::Completed, OrderStatus::Compensating, OrderStatus::ManualReview],
             'completed' => [OrderStatus::Refunding],
             'compensating' => [OrderStatus::Cancelled, OrderStatus::Failed, OrderStatus::ManualReview],
             'cancelled' => [],
@@ -192,5 +193,28 @@ final class OrderTransitionTest extends TestCase
     {
         self::assertSame($terminal, $status->isTerminal());
         self::assertSame($cancellable, $status->isCancellable());
+    }
+
+    /**
+     * M6.4: a saga step that keeps failing for a non-business reason parks the order for an operator, wherever the saga was.
+     *
+     * @return iterable<string, array{Order}>
+     */
+    public static function midSagaOrders(): iterable
+    {
+        yield 'pending' => [OrderFactory::pending()];
+        yield 'key_reserved' => [OrderFactory::keyReserved()];
+        yield 'paid' => [OrderFactory::paid()];
+    }
+
+    #[DataProvider('midSagaOrders')]
+    #[Group('M6.4')]
+    public function testMidSagaOrderCanBeParkedForOperator(Order $order): void
+    {
+        $parked = $order->requireManualReview(FailureReason::SagaInterrupted, 'MarkOrderPaid', OrderFactory::later(500));
+
+        self::assertSame(OrderStatus::ManualReview, $parked->status);
+        self::assertSame(FailureReason::SagaInterrupted, $parked->failureReason);
+        self::assertSame($order->version + 1, $parked->version);
     }
 }

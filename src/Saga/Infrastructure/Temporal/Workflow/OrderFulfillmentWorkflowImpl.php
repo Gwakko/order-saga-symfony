@@ -93,7 +93,16 @@ final class OrderFulfillmentWorkflowImpl implements OrderFulfillmentWorkflow
 
             return yield from $this->compensate($saga, $order, $orderId, FailureReason::CancelledByCustomer, $step);
         } catch (ActivityFailure $failure) {
-            $reason = (new FailureClassifier())->reasonFor($failure, $step) ?? throw $failure;
+            $reason = (new FailureClassifier())->reasonFor($failure, $step);
+
+            // Not a business outcome (infrastructure kept failing until ScheduleToClose): the effects of the step are
+            // unknown, so nothing is compensated blindly and the order is parked for an operator (M6.4).
+            if ($reason === null) {
+                $this->progress = 'manual review';
+                yield $order->markManualReview($orderId, FailureReason::SagaInterrupted->value, $step->value);
+
+                return 'ManualReview';
+            }
 
             // Nothing was done yet: the order simply fails (EC-14, EC-48).
             if ($step === SagaStep::ReserveKey) {

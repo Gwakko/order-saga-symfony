@@ -289,9 +289,10 @@ final class OrderSagaHandlersTest extends TestCase
         self::assertSame(1, $this->orders->saves);
     }
 
-    public function testManualReviewFromPendingIsIllegal(): void
+    /** M6.4 opened `Pending`, `KeyReserved` and `Paid` for a non-business saga failure; a delivered order is still not parked this way. */
+    public function testManualReviewFromCompletedIsIllegal(): void
     {
-        $this->seed(OrderFactory::pending());
+        $this->seed(OrderFactory::completed());
 
         $this->expectException(IllegalOrderTransition::class);
 

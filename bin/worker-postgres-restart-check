@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# M6.4 / EC-85 / T-I-43 (manual part): restart Postgres while the compose Temporal worker is in the middle of a saga and
+# check that the order still reaches `completed`. Run from the HOST (it needs the docker CLI), not inside the php container.
+#
+#   bin/worker-postgres-restart-check
+#
+# It uses the dev stack (database `app`, task queue `order-saga`): a fresh product and key, an order placed over HTTP, the
+# saga started with the Temporal CLI, the gateway emulator holding the charge answer for 6 s, and `docker compose restart
+# postgres` fired while the charge is in flight. Exit 0 = Completed, 1 = anything else. Postgres is left running.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+dc() { docker compose "$@"; }
+sql() { dc exec -T postgres psql -U app -d app -tAc "$1"; }
+uuid() { uuidgen | tr 'A-Z' 'a-z'; }
+php_http() { dc exec -T php php -r "$1"; }
+
+cleanup() {
+    php_http '@file_get_contents("http://gateway-emulator:8081/__admin/reset", false, stream_context_create(["http" => ["method" => "POST"]]));' || true
+    dc up -d postgres >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+wait_postgres() {
+    for _ in $(seq 60); do
+        if dc exec -T postgres pg_isready -d app -U app >/dev/null 2>&1 && sql 'SELECT 1' >/dev/null 2>&1; then return 0; fi
+        sleep 1
+    done
+    echo "Postgres did not come back within 60 s" >&2
+    return 1
+}
+
+dc up -d postgres redis temporal gateway-emulator php nginx temporal-worker >/dev/null
+dc restart temporal-worker >/dev/null # the compose worker keeps old code until restarted
+wait_postgres
+sleep 3
+
+product=$(uuid)
+customer=$(uuid)
+sql "INSERT INTO products (id, name, price_amount, price_currency, active) VALUES ('$product', 'Restart check', 1999, 'EUR', true)" >/dev/null
+sql "INSERT INTO product_keys (id, product_id, code, status, version) VALUES ('$(uuid)', '$product', 'RESTART-$(date +%s)', 'available', 1)" >/dev/null
+
+php_http '@file_get_contents("http://gateway-emulator:8081/__admin/mode", false, stream_context_create(["http" => ["method" => "POST", "header" => "Content-Type: application/json", "content" => "{\"mode\":\"delay:6000\"}"]]));'
+
+body="{\"productId\":\"$product\",\"expectedPrice\":{\"amount\":1999,\"currency\":\"EUR\"}}"
+order=$(php_http '
+$c = stream_context_create(["http" => ["method" => "POST", "ignore_errors" => true, "header" => "Content-Type: application/json\r\nAccept: application/json\r\nX-Customer-Id: '"$customer"'\r\nIdempotency-Key: restart-'"$product"'", "content" => '"'$body'"']]);
+echo json_decode((string) file_get_contents("http://nginx/api/orders", false, $c), true)["orderId"] ?? "";')
+if [ -z "$order" ]; then echo "Could not place the order" >&2; exit 1; fi
+echo "order $order"
+
+dc exec -T temporal temporal workflow start --address localhost:7233 --task-queue order-saga --type OrderFulfillment \
+    --workflow-id "order-$order" --input "\"$order\"" >/dev/null
+echo "saga started, waiting for the charge to be in flight"
+
+for _ in $(seq 60); do
+    [ "$(sql "SELECT count(*) FROM payments WHERE order_id = '$order'")" != "0" ] && break
+    sleep 0.5
+done
+
+echo ">>> docker compose restart postgres"
+dc restart postgres >/dev/null
+wait_postgres
+
+for _ in $(seq 120); do
+    status=$(sql "SELECT status FROM orders WHERE id = '$order'" 2>/dev/null || true)
+    echo "status: ${status:-<db unavailable>}"
+    case "$status" in
+        completed) echo "OK: the order reached Completed after the Postgres restart"; exit 0 ;;
+        failed | cancelled | manual_review) echo "FAIL: the order ended as $status" >&2; exit 1 ;;
+    esac
+    sleep 2
+done
+echo "FAIL: the order did not complete within 240 s" >&2
+exit 1

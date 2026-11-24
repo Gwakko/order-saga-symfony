@@ -106,3 +106,13 @@ services:
         public: true
     App\Saga\Infrastructure\Temporal\Activity\OrderActivitiesImpl:
         public: true
+
+    # Worker resilience (M6.4): connection check before an activity, state reset after it (bin/temporal-worker.php).
+    App\Saga\Infrastructure\Temporal\Worker\ActivityResilienceInterceptor:
+        public: true
+    App\Saga\Infrastructure\Temporal\Worker\ActivityLifecycle:
+        public: true
+        arguments:
+            $resetter: '@services_resetter'
+    App\Saga\Infrastructure\Temporal\Worker\WorkerConnectionGuard:
+        public: true

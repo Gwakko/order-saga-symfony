@@ -10,10 +10,13 @@ use App\Saga\Infrastructure\Temporal\Config\SagaConfiguration;
 use App\Saga\Infrastructure\Temporal\Config\SagaConfigurationHolder;
 use App\Saga\Infrastructure\Temporal\Hello\HelloActivityImpl;
 use App\Saga\Infrastructure\Temporal\Hello\HelloWorkflowImpl;
+use App\Saga\Infrastructure\Temporal\Worker\ActivityLifecycle;
+use App\Saga\Infrastructure\Temporal\Worker\ActivityResilienceInterceptor;
 use App\Saga\Infrastructure\Temporal\Workflow\OrderFulfillmentWorkflowImpl;
 use App\Saga\Infrastructure\Temporal\Workflow\RefundWorkflowImpl;
 use Symfony\Component\Dotenv\Dotenv;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Temporal\Interceptor\SimplePipelineProvider;
 use Temporal\WorkerFactory;
 
 /**
@@ -35,8 +38,16 @@ if (!$configuration instanceof SagaConfiguration) {
 }
 SagaConfigurationHolder::set($configuration);
 
+$interceptor = $container->get(ActivityResilienceInterceptor::class);
+$lifecycle = $container->get(ActivityLifecycle::class);
+if (!$interceptor instanceof ActivityResilienceInterceptor || !$lifecycle instanceof ActivityLifecycle) {
+    throw new LogicException('Worker resilience services are missing');
+}
+
 $factory = WorkerFactory::create();
-$worker = $factory->newWorker($configuration->taskQueue);
+// The interceptor checks the database connection before every activity and marks transient database failures
+// retryable (EC-85); the finalizer below runs after every activity.
+$worker = $factory->newWorker($configuration->taskQueue, interceptorProvider: new SimplePipelineProvider([$interceptor]));
 
 $worker->registerWorkflowTypes(HelloWorkflowImpl::class, OrderFulfillmentWorkflowImpl::class, RefundWorkflowImpl::class);
 
@@ -47,12 +58,7 @@ foreach ([HelloActivityImpl::class, InventoryActivitiesImpl::class, PaymentActiv
         static fn (ReflectionClass $class): object => $container->get($class->getName()) ?? throw new LogicException('Activity service is missing: ' . $class->getName()),
     );
 }
-// Reset stateful services (Monolog buffers, Doctrine-like caches) after every activity.
-$worker->registerActivityFinalizer(static function () use ($container): void {
-    $resetter = $container->get('services_resetter');
-    if (is_object($resetter) && method_exists($resetter, 'reset')) {
-        $resetter->reset();
-    }
-});
+// After every activity: drop a connection with an open transaction, reset stateful services (Monolog buffers etc.).
+$worker->registerActivityFinalizer(static fn () => $lifecycle->finish());
 
 $factory->run();

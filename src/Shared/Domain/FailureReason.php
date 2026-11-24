@@ -14,4 +14,6 @@ enum FailureReason: string
     case CurrencyMismatch = 'CurrencyMismatch';
     case CancelledByCustomer = 'CancelledByCustomer';
     case CompensationFailed = 'CompensationFailed';
+    /** A saga step failed for a non-business reason (infrastructure) after all retries; an operator decides (M6.4). */
+    case SagaInterrupted = 'SagaInterrupted';
 }

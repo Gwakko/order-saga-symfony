@@ -49,9 +49,9 @@ enum OrderStatus: string
     private function allowedTargets(): array
     {
         return match ($this) {
-            self::Pending => [self::KeyReserved, self::Cancelled, self::Failed],
-            self::KeyReserved => [self::Paid, self::Compensating],
-            self::Paid => [self::Completed, self::Compensating],
+            self::Pending => [self::KeyReserved, self::Cancelled, self::Failed, self::ManualReview],
+            self::KeyReserved => [self::Paid, self::Compensating, self::ManualReview],
+            self::Paid => [self::Completed, self::Compensating, self::ManualReview],
             self::Completed => [self::Refunding],
             self::Compensating => [self::Cancelled, self::Failed, self::ManualReview],
             self::Refunding => [self::Refunded, self::ManualReview],
