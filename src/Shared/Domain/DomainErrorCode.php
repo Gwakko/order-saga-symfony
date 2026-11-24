@@ -21,6 +21,7 @@ enum DomainErrorCode: string
     case MoneyOverflow = 'MONEY_OVERFLOW';
     case UnknownCurrency = 'UNKNOWN_CURRENCY';
     case CurrencyMismatch = 'CURRENCY_MISMATCH';
+    case AmountMismatch = 'AMOUNT_MISMATCH';
     case PriceChanged = 'PRICE_CHANGED';
     case ProductNotFound = 'PRODUCT_NOT_FOUND';
     case ProductUnavailable = 'PRODUCT_UNAVAILABLE';

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Payment\Domain;
 
 use App\Payment\Domain\Event\OrphanChargeDetected;
+use App\Payment\Domain\Event\PaymentCapturedWithMismatch;
 use App\Payment\Domain\Event\PaymentDeclined;
 use App\Payment\Domain\Event\PaymentEvent;
 use App\Payment\Domain\Event\PaymentRefunded;
@@ -145,6 +146,45 @@ final readonly class Payment
         );
     }
 
+    /**
+     * The gateway captured money, but in another currency or amount than requested (EC-36, EC-37): the payment is not
+     * a success and goes straight to `RefundPending`; the refund is made by charge id. Only from an open outcome
+     * (`Pending`, `Unknown`, `Abandoned`). Repeating it with the same charge id is a no-op.
+     */
+    public function markCapturedWithMismatch(string $chargeId, MismatchReason $reason, \DateTimeImmutable $now): self
+    {
+        if (trim($chargeId) === '') {
+            throw new InvalidGatewayReference('charge id');
+        }
+
+        if ($this->status === PaymentStatus::RefundPending) {
+            return $this->gatewayChargeId === $chargeId ? $this : throw new PaymentAlreadySucceeded($this->id);
+        }
+
+        if (!in_array($this->status, [PaymentStatus::Pending, PaymentStatus::Unknown, PaymentStatus::Abandoned], true)) {
+            throw new IllegalPaymentTransition($this->status, PaymentStatus::RefundPending);
+        }
+
+        return $this->next(
+            PaymentStatus::RefundPending,
+            $now,
+            gatewayChargeId: $chargeId,
+            lastError: $reason->describe(),
+            event: fn(EventId $eventId, int $version): PaymentEvent => new PaymentCapturedWithMismatch($eventId, $this->id, $this->orderId, $this->amount, $version, $now, $chargeId, $reason),
+            eventType: 'PaymentCapturedWithMismatch',
+        );
+    }
+
+    /**
+     * The mismatch that sent this payment to refund, if that is how it got there.
+     */
+    public function capturedMismatch(): ?MismatchReason
+    {
+        return in_array($this->status, [PaymentStatus::RefundPending, PaymentStatus::Refunded], true)
+            ? MismatchReason::fromLastError($this->lastError)
+            : null;
+    }
+
     public function markDeclined(string $reason, \DateTimeImmutable $now): self
     {
         $this->assertCanTransitionTo(PaymentStatus::Declined);
@@ -173,7 +213,10 @@ final readonly class Payment
      */
     public function requestRefund(\DateTimeImmutable $now): self
     {
-        $this->assertCanTransitionTo(PaymentStatus::RefundPending);
+        // `RefundPending` is also reachable from open outcomes, but only through markCapturedWithMismatch().
+        if ($this->status !== PaymentStatus::Succeeded) {
+            throw new IllegalPaymentTransition($this->status, PaymentStatus::RefundPending);
+        }
 
         return $this->next(PaymentStatus::RefundPending, $now);
     }

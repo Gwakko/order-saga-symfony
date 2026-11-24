@@ -25,11 +25,11 @@ enum PaymentStatus: string
     private function allowedTargets(): array
     {
         return match ($this) {
-            self::Pending => [self::Unknown, self::Succeeded, self::Declined, self::Abandoned],
-            self::Unknown => [self::Succeeded, self::Declined, self::Abandoned],
+            self::Pending => [self::Unknown, self::Succeeded, self::Declined, self::Abandoned, self::RefundPending],
+            self::Unknown => [self::Succeeded, self::Declined, self::Abandoned, self::RefundPending],
             self::Succeeded => [self::RefundPending],
             self::RefundPending => [self::Refunded],
-            self::Abandoned => [self::Succeeded],
+            self::Abandoned => [self::Succeeded, self::RefundPending],
             self::Declined, self::Refunded => [],
         };
     }

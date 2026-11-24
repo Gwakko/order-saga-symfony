@@ -12,6 +12,8 @@ use App\Payment\Domain\Exception\IllegalPaymentTransition;
 use App\Payment\Domain\Exception\InvalidGatewayReference;
 use App\Payment\Domain\Exception\PaymentAlreadySucceeded;
 use App\Payment\Domain\Exception\PaymentInvariantViolated;
+use App\Payment\Domain\MismatchKind;
+use App\Payment\Domain\MismatchReason;
 use App\Payment\Domain\Payment;
 use App\Payment\Domain\PaymentStatus;
 use App\Shared\Domain\Currency;
@@ -39,11 +41,12 @@ final class PaymentTest extends TestCase
     {
         // Transcribed by hand from the spec table (01_domain.md section 5).
         $allowed = [
-            'pending' => ['unknown', 'succeeded', 'declined', 'abandoned'],
-            'unknown' => ['succeeded', 'declined', 'abandoned'],
+            // refund_pending from pending/unknown/abandoned: markCapturedWithMismatch (EC-36, EC-37, decision 2026-11-24).
+            'pending' => ['unknown', 'succeeded', 'declined', 'abandoned', 'refund_pending'],
+            'unknown' => ['succeeded', 'declined', 'abandoned', 'refund_pending'],
             'succeeded' => ['refund_pending'],
             'declined' => [],
-            'abandoned' => ['succeeded'],
+            'abandoned' => ['succeeded', 'refund_pending'],
             'refund_pending' => ['refunded'],
             'refunded' => [],
         ];
@@ -74,7 +77,10 @@ final class PaymentTest extends TestCase
             PaymentStatus::Succeeded => fn(): Payment => $payment->markSucceeded('ch_other', Currency::EUR, $now),
             PaymentStatus::Declined => fn(): Payment => $payment->markDeclined('declined', $now),
             PaymentStatus::Abandoned => fn(): Payment => $payment->abandon($now),
-            PaymentStatus::RefundPending => fn(): Payment => $payment->requestRefund($now),
+            // Two ways in: requestRefund after a success, markCapturedWithMismatch from an open outcome.
+            PaymentStatus::RefundPending => fn(): Payment => $payment->status === PaymentStatus::Succeeded
+                ? $payment->requestRefund($now)
+                : $payment->markCapturedWithMismatch('ch_other', new MismatchReason(MismatchKind::Currency, Money::of(1999, Currency::USD)), $now),
             PaymentStatus::Refunded => fn(): Payment => $payment->markRefunded('rf_other', $now),
         };
 

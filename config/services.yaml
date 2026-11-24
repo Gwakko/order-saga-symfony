@@ -7,6 +7,8 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    inventory.reservation_ttl_seconds: 900
+    payment.charge_guard_seconds: 60
 
 services:
     # default configuration for services in *this* file
@@ -24,3 +26,11 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+    App\Inventory\Application\Command\ReserveKey\ReserveKeyHandler:
+        arguments:
+            $ttlSeconds: '%inventory.reservation_ttl_seconds%'
+
+    App\Payment\Application\Command\ChargePayment\ChargePaymentHandler:
+        arguments:
+            $chargeGuardSeconds: '%payment.charge_guard_seconds%'
