@@ -9,6 +9,7 @@ use App\Saga\Infrastructure\Temporal\Config\SagaConfiguration;
 use App\Saga\Infrastructure\Temporal\Workflow\OrderFulfillmentWorkflow;
 use App\Saga\Infrastructure\Temporal\Workflow\RefundWorkflow;
 use App\Shared\Infrastructure\Id\SymfonyUuidGenerator;
+use App\Tests\Workflow\Support\SequencedActivityInvocationCache;
 use Temporal\Api\Enums\V1\EventType;
 use Temporal\DataConverter\DataConverter;
 use Temporal\DataConverter\EncodedValues;
@@ -25,6 +26,9 @@ abstract class OrderSagaWorkflowTestCase extends WorkflowTestCase
 {
     private static ?SagaConfiguration $configuration = null;
 
+    /** Per-call answers of an activity (the first `ChargePayment` fails, the recovery one succeeds); see the class comment. */
+    protected SequencedActivityInvocationCache $sequences;
+
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
@@ -34,6 +38,7 @@ abstract class OrderSagaWorkflowTestCase extends WorkflowTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->sequences = SequencedActivityInvocationCache::create();
         $this->activityMocks->clear();
     }
 
@@ -43,6 +48,8 @@ abstract class OrderSagaWorkflowTestCase extends WorkflowTestCase
         $this->activityMocks->expectCompletion('ReserveKey', 'reservation-1');
         $this->activityMocks->expectCompletion('MarkOrderKeyReserved', 2);
         $this->activityMocks->expectCompletion('ChargePayment', 'payment-1');
+        // The gateway-inspection switch is off unless a test says otherwise (M9): the branch is left at once.
+        $this->activityMocks->expectCompletion('PrepareChargeInspection', ['inspect' => false, 'paymentId' => null, 'amount' => null, 'currency' => null]);
         $this->activityMocks->expectCompletion('MarkOrderPaid', 3);
         $this->activityMocks->expectCompletion('ConsumeReservation', 'key-1');
         $this->activityMocks->expectCompletion('CompleteOrder', 4);

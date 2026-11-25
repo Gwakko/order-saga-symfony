@@ -34,6 +34,30 @@ final readonly class InspectionRequest
         }
     }
 
+    /**
+     * Builds the request from the answer of `PrepareChargeInspection` (`paymentId` is the idempotency key the charge was
+     * sent with, `amount` and `currency` are the stored payment's).
+     *
+     * @param array<mixed> $prepared the activity result, untyped on arrival
+     *
+     * @throws InspectionContractViolation
+     */
+    public static function from(array $prepared, string $orderId): self
+    {
+        $paymentId = $prepared['paymentId'] ?? null;
+        $amount = $prepared['amount'] ?? null;
+        $currency = $prepared['currency'] ?? null;
+
+        if (!is_string($paymentId) || !is_int($amount) || !is_string($currency)) {
+            throw InspectionContractViolation::because('PrepareChargeInspection must return a string paymentId, an integer amount and a string currency');
+        }
+
+        $currencyValue = Currency::tryFrom($currency)
+            ?? throw InspectionContractViolation::because('PrepareChargeInspection returned an unknown currency');
+
+        return new self($orderId, $paymentId, $amount, $currencyValue);
+    }
+
     /** @return array{contractVersion: int, orderId: string, idempotencyKey: string, expected: array{amount: int, currency: string}} */
     public function toArray(): array
     {

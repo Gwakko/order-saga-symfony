@@ -21,10 +21,10 @@ wf-install:
 	$(PHP) php bin/install-temporal-test-server.php
 
 # Re-records tests/Workflow/Fixtures/history-happy.json (T-W-20) from a real happy-path run. Only after an intentional, versioned workflow change.
-# FILTER=<test method> records another fixture (e.g. FILTER=testRecordChargeExhaustedHistory writes history-charge-exhausted-v0.json, T-W-21; never re-record that one).
+# FILTER=<test method> records another fixture: testRecordChargeExhaustedHistory writes history-charge-exhausted-v0.json (T-W-21, never re-record it), testRecordChargeInspectedHistory writes history-charge-inspected-v1.json (T-W-22).
 wf-record-history: FILTER ?= testRecordHappyPathHistory
 wf-record-history:
-	$(PHP) env RECORD_HISTORY=1 vendor/bin/phpunit tests/Workflow/OrderFulfillmentReplayTest.php --filter $(FILTER)
+	$(PHP) env RECORD_HISTORY=1 vendor/bin/phpunit --testsuite workflow --filter $(FILTER)
 
 phpstan:
 	$(PHP) bin/console cache:warmup --env=dev -q

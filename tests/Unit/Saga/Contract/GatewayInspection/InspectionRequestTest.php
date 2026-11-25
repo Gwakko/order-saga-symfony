@@ -31,6 +31,43 @@ final class InspectionRequestTest extends TestCase
         self::assertSame('EUR', $array['expected']['currency']);
     }
 
+    /** `PrepareChargeInspection` answers the idempotency key (the payment id) and the stored money; `from` builds the golden request. */
+    #[Group('T-M9-01')]
+    public function testFromBuildsTheRequestFromThePrepareAnswer(): void
+    {
+        $request = InspectionRequest::from(
+            ['inspect' => true, 'paymentId' => '0190a5c4-0000-7000-8000-0000000000a1', 'amount' => 1999, 'currency' => 'EUR'],
+            '0190a5c4-0000-7000-8000-000000000020',
+        );
+
+        self::assertEquals(GoldenFiles::json('input.v1.json'), $request->toArray());
+    }
+
+    /** @param array<mixed> $prepared */
+    #[Group('T-M9-01')]
+    #[DataProvider('brokenPrepareAnswers')]
+    public function testFromRejectsAnAnswerThatIsNotUsable(array $prepared): void
+    {
+        $this->expectException(InspectionContractViolation::class);
+
+        InspectionRequest::from($prepared, '0190a5c4-0000-7000-8000-000000000020');
+    }
+
+    /** @return iterable<string, array{array<mixed>}> */
+    public static function brokenPrepareAnswers(): iterable
+    {
+        $ok = ['inspect' => true, 'paymentId' => '0190a5c4-0000-7000-8000-0000000000a1', 'amount' => 1999, 'currency' => 'EUR'];
+
+        yield 'skip answer' => [['inspect' => false, 'paymentId' => null, 'amount' => null, 'currency' => null]];
+        yield 'no payment id' => [['paymentId' => null] + $ok];
+        yield 'float amount' => [['amount' => 19.99] + $ok];
+        yield 'string amount' => [['amount' => '1999'] + $ok];
+        yield 'zero amount' => [['amount' => 0] + $ok];
+        yield 'unknown currency' => [['currency' => 'XYZ'] + $ok];
+        yield 'lowercase currency' => [['currency' => 'eur'] + $ok];
+        yield 'key with a slash' => [['paymentId' => 'a/b'] + $ok];
+    }
+
     /** @param array{string, string, int} $args */
     #[Group('T-M9-01')]
     #[DataProvider('invalidRequests')]

@@ -48,6 +48,11 @@ services:
         arguments:
             $chargeGuardSeconds: '%payment.charge_guard_seconds%'
 
+    # The switch of the Go gateway-inspection branch (M9.4), off by default; read by the activity, not by the workflow.
+    App\Payment\Application\Query\PrepareChargeInspection\PrepareChargeInspectionHandler:
+        arguments:
+            $enabled: '%temporal.go_inspection.enabled%'
+
     # Time is UTC and goes through the PSR-20 port only (INV-12, T-ARCH-08).
     Psr\Clock\ClockInterface:
         class: Symfony\Component\Clock\NativeClock

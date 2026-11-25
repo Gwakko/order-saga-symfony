@@ -142,9 +142,11 @@ final class OrderFulfillmentFailureTest extends OrderSagaWorkflowTestCase
 
         $run = $this->startSaga();
 
+        // M9: the exhausted charge now reads the inspection switch (PrepareChargeInspection answers `inspect=false`, see mockHappyPath)
+        // and carries on as before; the outcome is unchanged.
         self::assertSame('Failed', $this->resultOf($run));
         self::assertSame(
-            ['ReserveKey', 'MarkOrderKeyReserved', 'ChargePayment', 'StartOrderCompensation', 'RefundPayment', 'ReleaseReservation', 'FinishOrderCompensation'],
+            ['ReserveKey', 'MarkOrderKeyReserved', 'ChargePayment', 'PrepareChargeInspection', 'StartOrderCompensation', 'RefundPayment', 'ReleaseReservation', 'FinishOrderCompensation'],
             $this->scheduledActivities($run),
         );
         self::assertSame('PaymentUnavailable', $this->compensationReason($run));

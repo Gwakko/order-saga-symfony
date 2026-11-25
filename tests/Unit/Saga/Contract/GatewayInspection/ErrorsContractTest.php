@@ -4,18 +4,16 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Saga\Contract\GatewayInspection;
 
+use App\Saga\Infrastructure\Temporal\Config\ActivityProfile;
+use App\Saga\Infrastructure\Temporal\Config\ActivitySettings;
+use App\Saga\Infrastructure\Temporal\Config\SagaConfiguration;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 #[Group('M9.1')]
 final class ErrorsContractTest extends TestCase
 {
-    /**
-     * What the `inspect_gateway_charge` profile will list as `non_retryable_types` (config/packages/temporal.yaml, M9.4).
-     * Until the profile exists this constant stands in for it; M9.4 replaces it with the value read from the profile.
-     */
-    private const array PROFILE_NON_RETRYABLE_TYPES = ['InvalidInspectionInput', 'UnsupportedContractVersion', 'GatewayRequestRejected'];
-
     #[Group('T-M9-04')]
     public function testNonRetryableTypesEqualTheContractFile(): void
     {
@@ -27,11 +25,22 @@ final class ErrorsContractTest extends TestCase
             }
         }
 
-        $actual = self::PROFILE_NON_RETRYABLE_TYPES;
+        $profile = $this->profile();
+        $actual = $profile->nonRetryableTypes;
         sort($expected);
         sort($actual);
 
         self::assertSame($expected, $actual);
+    }
+
+    /** The list also reaches the options the workflow gives to the activity (what the server reads). */
+    #[Group('T-M9-04')]
+    public function testTheTypesReachTheRetryPolicy(): void
+    {
+        $options = $this->configuration()->activityOptions(ActivityProfile::InspectGatewayCharge);
+
+        self::assertNotNull($options->retryOptions);
+        self::assertEqualsCanonicalizing($this->profile()->nonRetryableTypes, $options->retryOptions->nonRetryableExceptions);
     }
 
     #[Group('T-M9-04')]
@@ -45,6 +54,25 @@ final class ErrorsContractTest extends TestCase
         foreach ($types as $type) {
             self::assertMatchesRegularExpression('/^[A-Z][A-Za-z0-9]*$/', $type);
         }
+    }
+
+    private function profile(): ActivitySettings
+    {
+        return $this->configuration()->activities[ActivityProfile::InspectGatewayCharge->value];
+    }
+
+    /** The shipped `config/packages/temporal.yaml`, with the Go queue parameter filled in the way the container does. */
+    private function configuration(): SagaConfiguration
+    {
+        $yaml = Yaml::parseFile(dirname(__DIR__, 5) . '/config/packages/temporal.yaml');
+        self::assertIsArray($yaml);
+        self::assertIsArray($yaml['parameters'] ?? null);
+        $activities = $yaml['parameters']['temporal.activities'] ?? null;
+        self::assertIsArray($activities);
+        self::assertIsArray($activities['inspect_gateway_charge'] ?? null);
+        $activities['inspect_gateway_charge']['task_queue'] = 'payment-go-test';
+
+        return SagaConfiguration::fromParameters('order-saga', 86400, $activities, 900, 60);
     }
 
     /** @return list<array{type: string, nonRetryable: bool}> */

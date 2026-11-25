@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Fixtures\PhpStan\WorkflowDeterminism;
 
 use App\Saga\Infrastructure\Temporal\Config\SagaConfigurationHolder;
+use App\Saga\Infrastructure\Temporal\Contract\GatewayInspection\InspectionRequest;
 use Carbon\CarbonInterval;
 use Temporal\Workflow;
 use Temporal\Workflow\WorkflowInterface;
@@ -21,7 +22,8 @@ final class Valid
         $deadline = new \DateTimeImmutable('2026-01-01T00:00:00Z');
         $options = $config->activityOptions(\App\Saga\Infrastructure\Temporal\Config\ActivityProfile::OrderStep);
         $interval = CarbonInterval::seconds(5);
-        $this->progress = self::label($now->format('c') . $deadline->format('c') . $orderId . $interval->s . ($options->taskQueue ?? ''));
+        $inspection = InspectionRequest::from(['paymentId' => 'a', 'amount' => 1, 'currency' => 'EUR'], $orderId); // a pure contract mapping
+        $this->progress = self::label($now->format('c') . $deadline->format('c') . $orderId . $interval->s . $inspection->idempotencyKey . ($options->taskQueue ?? ''));
 
         yield Workflow::timer($interval);
     }

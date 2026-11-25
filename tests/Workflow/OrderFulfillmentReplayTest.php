@@ -22,6 +22,8 @@ final class OrderFulfillmentReplayTest extends OrderSagaWorkflowTestCase
 {
     private const string FIXTURE = __DIR__ . '/Fixtures/history-happy.json';
     private const string CHARGE_EXHAUSTED_V0_FIXTURE = __DIR__ . '/Fixtures/history-charge-exhausted-v0.json';
+    public const string INSPECTED_V1_FIXTURE = __DIR__ . '/Fixtures/history-charge-inspected-v1.json';
+    public const string INSPECTED_V1_WORKFLOW_ID = '0190a5c4-0000-7000-8000-000000000022';
 
     #[Group('T-W-20')]
     public function testHappyPathHistoryStillReplays(): void
@@ -118,5 +120,21 @@ final class OrderFulfillmentReplayTest extends OrderSagaWorkflowTestCase
         (new WorkflowReplayer())->downloadHistory(OrderFulfillmentWorkflow::TYPE, $run->getExecution(), self::CHARGE_EXHAUSTED_V0_FIXTURE);
 
         self::assertFileExists(self::CHARGE_EXHAUSTED_V0_FIXTURE);
+    }
+
+    /**
+     * T-W-22 (EC-108): the history of the branch "ChargePayment exhausted, the gateway holds the charge, the repeated charge
+     * confirms it", recorded by the M9.4 workflow (it holds the `gateway-inspection` version marker, the activities
+     * `PrepareChargeInspection`, `InspectGatewayCharge` on the Go queue and the second `ChargePayment`). Replay compares the
+     * commands, so a renamed change id, a renamed or reordered activity, or another task queue breaks it.
+     */
+    #[Group('T-W-22')]
+    public function testChargeInspectedV1HistoryStillReplays(): void
+    {
+        self::assertFileExists(self::INSPECTED_V1_FIXTURE, 'Record it with `make wf-record-history FILTER=testRecordChargeInspectedHistory`.');
+
+        (new WorkflowReplayer())->replayFromJSON(OrderFulfillmentWorkflow::TYPE, self::INSPECTED_V1_FIXTURE);
+
+        $this->addToAssertionCount(1);
     }
 }

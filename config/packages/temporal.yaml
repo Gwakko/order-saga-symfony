@@ -1,9 +1,16 @@
 # Saga timeouts and retries (03_saga.md section 3). Starting values of a learning project, not measurements.
 # Every duration is whole SECONDS here; the SDK treats a bare integer as milliseconds, so the conversion to
 # `DateInterval` is done in one place (SagaConfiguration). The TTL invariant (T-CFG-01) is checked at container compile
-# time by SagaConfigurationPass: reservation TTL > ReserveKey + ChargePayment + ConsumeReservation ScheduleToClose + charge guard.
+# time by SagaConfigurationPass: reservation TTL > ReserveKey + ChargePayment + order_step (PrepareChargeInspection) +
+# inspect_gateway_charge + charge_recovery + ConsumeReservation ScheduleToClose + charge guard (60+300+60+60+60+60+60 = 660 < 900).
 parameters:
     temporal.task_queue: order-saga
+    # Queue of the Go worker (M9, docs/spec/09_go_worker.md section 6) and the switch of the gateway-inspection branch.
+    # The switch is read by the PHP activity PrepareChargeInspection, never by the workflow code. Off by default.
+    env(TEMPORAL_GO_TASK_QUEUE): payment-go
+    env(TEMPORAL_GO_INSPECTION_ENABLED): '0'
+    temporal.go_task_queue: '%env(TEMPORAL_GO_TASK_QUEUE)%'
+    temporal.go_inspection.enabled: '%env(bool:TEMPORAL_GO_INSPECTION_ENABLED)%'
     # Safety nets for a whole run. 03_saga.md says 24 h / 7 d, but the RefundPayment compensation alone may retry for 7 d
     # before the saga parks the order for manual review (EC-47), so a shorter run timeout would kill the workflow first.
     # Both are 8 days (M6.3, see docs/reports/M6.3.md "Отклонения").
@@ -43,6 +50,36 @@ parameters:
             initial_interval: 2
             backoff: 2
             max_interval: 30
+            max_attempts: 0
+            non_retryable:
+                - App\Payment\Application\Exception\PaymentDeclined
+                - App\Payment\Application\Exception\AmountMismatch
+                - App\Shared\Domain\Exception\CurrencyMismatch
+                - App\Payment\Application\Exception\ReservationNotActive
+        # InspectGatewayCharge (Go worker, own task queue): a read-only GET at the gateway, run only after ChargePayment gave up.
+        # The Go HTTP timeout (5 s) stays below StartToClose; ScheduleToStart 20 s so a missing Go worker costs 20 s, not 60 s
+        # (ScheduleToStart is never retried). `non_retryable_types` are NAMES of failures raised by Go, see contracts/inspect-gateway-charge/v1/errors.json.
+        inspect_gateway_charge:
+            task_queue: '%temporal.go_task_queue%'
+            schedule_to_start: 20
+            start_to_close: 15
+            schedule_to_close: 60
+            initial_interval: 2
+            backoff: 2
+            max_interval: 10
+            max_attempts: 0
+            non_retryable: []
+            non_retryable_types:
+                - InvalidInspectionInput
+                - UnsupportedContractVersion
+                - GatewayRequestRejected
+        # The ChargePayment that confirms a charge the gateway already holds (same Idempotency-Key, so no second charge).
+        charge_recovery:
+            start_to_close: 15
+            schedule_to_close: 60
+            initial_interval: 2
+            backoff: 2
+            max_interval: 10
             max_attempts: 0
             non_retryable:
                 - App\Payment\Application\Exception\PaymentDeclined
@@ -96,3 +133,6 @@ when@test:
         # earlier runs are never served to this run's worker.
         env(TEMPORAL_TASK_QUEUE): order-saga-test
         temporal.task_queue: '%env(TEMPORAL_TASK_QUEUE)%'
+        # The workflow suite uses this fixed name (a name that changes per run would break the recorded histories, M8a).
+        # integration and e2e runs override it with a unique one.
+        env(TEMPORAL_GO_TASK_QUEUE): payment-go-test

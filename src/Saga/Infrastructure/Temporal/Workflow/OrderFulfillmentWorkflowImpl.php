@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace App\Saga\Infrastructure\Temporal\Workflow;
 
+use App\Saga\Infrastructure\Temporal\Activity\GatewayInspectionActivities;
 use App\Saga\Infrastructure\Temporal\Activity\InventoryActivities;
 use App\Saga\Infrastructure\Temporal\Activity\OrderActivities;
 use App\Saga\Infrastructure\Temporal\Activity\PaymentActivities;
 use App\Saga\Infrastructure\Temporal\Config\ActivityProfile;
 use App\Saga\Infrastructure\Temporal\Config\SagaConfigurationHolder;
+use App\Saga\Infrastructure\Temporal\Contract\GatewayInspection\InspectionContractViolation;
+use App\Saga\Infrastructure\Temporal\Contract\GatewayInspection\InspectionOutcome;
+use App\Saga\Infrastructure\Temporal\Contract\GatewayInspection\InspectionRequest;
+use App\Saga\Infrastructure\Temporal\Contract\GatewayInspection\InspectionResult;
 use App\Shared\Domain\FailureReason;
 use Temporal\Exception\Failure\ActivityFailure;
+use Temporal\Exception\Failure\ApplicationFailure;
+use Temporal\Exception\Failure\TimeoutFailure;
 use Temporal\Internal\Workflow\ActivityProxy;
 use Temporal\Workflow;
 use Temporal\Workflow\Saga;
@@ -20,9 +27,20 @@ use Temporal\Workflow\Saga;
  * activity that calls a use case. Cancellation: the `requestCancellation` signal sets a flag, and a guard (the flag or the
  * flag in the database, 03_saga.md sections 2 and 5) runs before the first step, before the charge and before consuming
  * the reservation; consuming is the point of no return, after it a cancellation is ignored (EC-41).
+ *
+ * Gateway inspection (M9, docs/spec/09_go_worker.md section 2.3): when `ChargePayment` gave up with an unknown outcome
+ * (EC-34), the saga may ask the gateway what happened to the charge, through an activity served by the Go worker. The branch
+ * sits behind `Workflow::getVersion`, so histories recorded before it replay unchanged, and behind a switch that the PHP
+ * activity `PrepareChargeInspection` reads (off by default). Any problem with the inspection leaves the pre-M9 behavior.
  */
 final class OrderFulfillmentWorkflowImpl implements OrderFulfillmentWorkflow
 {
+    /** Change id of the gateway-inspection branch; renaming it breaks the replay of every history that holds the marker. */
+    public const string GATEWAY_INSPECTION_CHANGE = 'gateway-inspection';
+
+    /** Types of Go failures that mean a bug on one of the sides (non-retryable, errors.json): logged as errors. */
+    private const array INSPECTION_BUG_TYPES = ['InvalidInspectionInput', 'UnsupportedContractVersion'];
+
     private string $progress = 'starting';
     private bool $cancelRequested = false;
 
@@ -35,6 +53,9 @@ final class OrderFulfillmentWorkflowImpl implements OrderFulfillmentWorkflow
         $payment = Workflow::newActivityStub(PaymentActivities::class, $config->activityOptions(ActivityProfile::ChargePayment));
         $refunding = Workflow::newActivityStub(PaymentActivities::class, $config->activityOptions(ActivityProfile::RefundPayment));
         $order = Workflow::newActivityStub(OrderActivities::class, $config->activityOptions(ActivityProfile::OrderStep));
+        $recovery = Workflow::newActivityStub(PaymentActivities::class, $config->activityOptions(ActivityProfile::ChargeRecovery));
+        $preparing = Workflow::newActivityStub(PaymentActivities::class, $config->activityOptions(ActivityProfile::OrderStep));
+        $inspector = Workflow::newActivityStub(GatewayInspectionActivities::class, $config->activityOptions(ActivityProfile::InspectGatewayCharge));
 
         $saga = new Saga();
         $saga->setParallelCompensation(false);
@@ -62,7 +83,13 @@ final class OrderFulfillmentWorkflowImpl implements OrderFulfillmentWorkflow
 
             $step = SagaStep::ChargePayment;
             $this->progress = $step->value;
-            $paymentId = self::text(yield $payment->chargePayment($orderId));
+
+            try {
+                $paymentId = self::text(yield $payment->chargePayment($orderId));
+            } catch (ActivityFailure $failure) {
+                // Rethrows the failure itself unless the gateway confirmed a successful charge.
+                $paymentId = yield from $this->inspectExhaustedCharge($failure, $orderId, $preparing, $inspector, $recovery);
+            }
 
             $step = SagaStep::MarkPaid;
             $this->progress = $step->value;
@@ -92,6 +119,9 @@ final class OrderFulfillmentWorkflowImpl implements OrderFulfillmentWorkflow
             }
 
             return yield from $this->compensate($saga, $order, $orderId, FailureReason::CancelledByCustomer, $step);
+        } catch (InspectionDeclined) {
+            // The gateway proved the decline; `Unknown` payment is closed by ReconcilePayments (EC-100).
+            return yield from $this->compensate($saga, $order, $orderId, FailureReason::PaymentDeclined, $step);
         } catch (ActivityFailure $failure) {
             $reason = (new FailureClassifier())->reasonFor($failure, $step);
 
@@ -119,6 +149,94 @@ final class OrderFulfillmentWorkflowImpl implements OrderFulfillmentWorkflow
     public function requestCancellation(): void
     {
         $this->cancelRequested = true;
+    }
+
+    /**
+     * `ChargePayment` failed. Only an exhausted charge with an unknown outcome (EC-34) is looked into, and only for runs
+     * that took the `gateway-inspection` version (histories from before M9 never reach the inspection). Returns the id of
+     * the payment once the gateway confirmed the charge and the repeated `ChargePayment` recorded it; throws the original
+     * failure in every other case (the pre-M9 behavior), or `InspectionDeclined` when the gateway proved a decline.
+     *
+     * @param ActivityProxy<PaymentActivities>            $preparing
+     * @param ActivityProxy<GatewayInspectionActivities>  $inspector
+     * @param ActivityProxy<PaymentActivities>            $recovery
+     *
+     * @return \Generator<int, mixed, mixed, string> the payment id
+     *
+     * @throws InspectionDeclined
+     */
+    private function inspectExhaustedCharge(ActivityFailure $failure, string $orderId, object $preparing, object $inspector, object $recovery): \Generator
+    {
+        if ((new FailureClassifier())->reasonFor($failure, SagaStep::ChargePayment) !== FailureReason::PaymentUnavailable) {
+            throw $failure;
+        }
+
+        $version = yield Workflow::getVersion(self::GATEWAY_INSPECTION_CHANGE, Workflow::DEFAULT_VERSION, 1);
+
+        if ($version === Workflow::DEFAULT_VERSION) {
+            throw $failure;
+        }
+
+        $this->progress = 'inspecting payment';
+
+        try {
+            $prepared = yield $preparing->prepareChargeInspection($orderId);
+        } catch (ActivityFailure) {
+            throw $failure; // no data to ask with
+        }
+
+        if (!is_array($prepared) || ($prepared['inspect'] ?? false) !== true) {
+            throw $failure; // the switch is off, there is no payment, or its status is already decided
+        }
+
+        try {
+            $request = InspectionRequest::from($prepared, $orderId);
+            $answer = yield $inspector->inspectGatewayCharge($request->toArray());
+            $result = InspectionResult::fromArray(is_array($answer) ? $answer : throw InspectionContractViolation::because('the result is not an object'));
+        } catch (ActivityFailure $inspection) {
+            $this->logInspectionFailure($inspection);
+
+            throw $failure;
+        } catch (InspectionContractViolation $violation) {
+            Workflow::getLogger()->error('InspectGatewayCharge contract violation, keeping the pre-M9 behavior', ['reason' => $violation->getMessage()]);
+
+            throw $failure;
+        }
+
+        if ($result->outcome === InspectionOutcome::Declined) {
+            throw new InspectionDeclined();
+        }
+
+        if ($result->outcome === InspectionOutcome::Succeeded && $result->matchesExpected) {
+            // Same idempotency key as the first attempt: the gateway does not charge twice, the use case records the success.
+            $this->progress = 'recovering payment';
+
+            return self::text(yield $recovery->chargePayment($orderId));
+        }
+
+        throw $failure; // not found, or a charge of another amount or currency: RefundPayment sorts it out
+    }
+
+    private function logInspectionFailure(ActivityFailure $inspection): void
+    {
+        $cause = $inspection->getPrevious();
+
+        if ($cause instanceof TimeoutFailure) {
+            Workflow::getLogger()->warning('InspectGatewayCharge timed out, keeping the pre-M9 behavior', ['timeoutType' => $cause->getTimeoutType()]);
+
+            return;
+        }
+
+        $type = $cause instanceof ApplicationFailure ? $cause->getType() : 'unknown';
+        $context = ['failureType' => $type];
+
+        if (in_array($type, self::INSPECTION_BUG_TYPES, true)) {
+            Workflow::getLogger()->error('InspectGatewayCharge rejected the request, keeping the pre-M9 behavior', $context);
+
+            return;
+        }
+
+        Workflow::getLogger()->warning('InspectGatewayCharge failed, keeping the pre-M9 behavior', $context);
     }
 
     /**

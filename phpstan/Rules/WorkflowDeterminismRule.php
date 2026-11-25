@@ -21,7 +21,7 @@ use PHPStan\Rules\RuleErrorBuilder;
  * Applies to a class that carries `#[WorkflowInterface]` (directly or through an interface it implements) and to any
  * class in a `...\Saga\Infrastructure\Temporal\Workflow` namespace. Forbidden there: the system clock, randomness,
  * `uniqid`, sleeping, environment and file access, network and database classes, static properties, and static calls
- * outside the allowed list (`Temporal\*`, `Carbon\*`, `self`/`static`/`parent`, and the configuration holder).
+ * outside the allowed list (`Temporal\*`, `Carbon\*`, `self`/`static`/`parent`, the configuration holder and the pure `GatewayInspection` contract mapping).
  * Time comes from `Workflow::now()`, ids from `Workflow::uuid()`, effects from activities.
  *
  * @implements Rule<Node>
@@ -50,9 +50,13 @@ final class WorkflowDeterminismRule implements Rule
         'GuzzleHttp\\', 'Redis', 'Random\\',
     ];
 
-    /** Static calls on these classes are fine. */
+    /**
+     * Static calls on these classes are fine. The `GatewayInspection` contract classes are pure mappings between arrays and
+     * value objects (no clock, no randomness, no I/O; docs/spec/09_go_worker.md section 8).
+     */
     private const array ALLOWED_STATIC_CLASS_PREFIXES = [
         'Temporal\\', 'Carbon\\', 'App\\Saga\\Infrastructure\\Temporal\\Config\\SagaConfigurationHolder',
+        'App\\Saga\\Infrastructure\\Temporal\\Contract\\GatewayInspection\\',
     ];
 
     private const array DATE_CLASSES = ['datetime', 'datetimeimmutable'];

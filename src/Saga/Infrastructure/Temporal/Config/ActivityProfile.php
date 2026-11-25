@@ -13,6 +13,10 @@ enum ActivityProfile: string
     case ReserveKey = 'reserve_key';
     case OrderStep = 'order_step';
     case ChargePayment = 'charge_payment';
+    /** `InspectGatewayCharge`, served by the Go worker on its own task queue (docs/spec/09_go_worker.md section 4.7). */
+    case InspectGatewayCharge = 'inspect_gateway_charge';
+    /** The repeated `ChargePayment` that confirms a charge the gateway already holds (same idempotency key). */
+    case ChargeRecovery = 'charge_recovery';
     case ConsumeReservation = 'consume_reservation';
     case RevokeSoldKey = 'revoke_sold_key';
     case RefundPayment = 'refund_payment';

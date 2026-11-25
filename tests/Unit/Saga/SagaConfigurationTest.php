@@ -6,8 +6,10 @@ namespace App\Tests\Unit\Saga;
 
 use App\Saga\Infrastructure\DependencyInjection\SagaConfigurationPass;
 use App\Saga\Infrastructure\Temporal\Config\ActivityProfile;
+use App\Saga\Infrastructure\Temporal\Config\ActivitySettings;
 use App\Saga\Infrastructure\Temporal\Config\InvalidSagaConfiguration;
 use App\Saga\Infrastructure\Temporal\Config\SagaConfiguration;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -20,13 +22,17 @@ use Temporal\Common\IdReusePolicy;
 #[Group('M6.2')]
 final class SagaConfigurationTest extends TestCase
 {
-    /** 60 + 300 + 60 (ScheduleToClose of reserve, charge, consume) + 60 (charge guard) = 480 s, from the yaml table. */
-    private const int STEP_DEADLINES = 480;
+    /**
+     * ScheduleToClose of reserve (60) + charge (300) + order_step for PrepareChargeInspection (60) + inspect_gateway_charge (60)
+     * + charge_recovery (60) + consume (60) + the charge guard (60) = 660 s, from the yaml table. The inspection terms count
+     * whether or not the switch is on.
+     */
+    private const int STEP_DEADLINES = 660;
 
     #[Group('T-CFG-01')]
     public function testTtlMustExceedStepDeadlines(): void
     {
-        // The shipped values: 900 s TTL is above 480 s.
+        // The shipped values: 900 s TTL is above 660 s.
         $this->build(900);
         $this->build(self::STEP_DEADLINES + 1);
         $this->addToAssertionCount(2);
@@ -148,6 +154,121 @@ final class SagaConfigurationTest extends TestCase
         SagaConfiguration::fromParameters('order-saga', 86400, $activities, 900, 60);
     }
 
+    /** T-M9-05: queue, ScheduleToStart and failure type names of a profile reach the SDK's ActivityOptions. */
+    #[Group('T-M9-05')]
+    public function testProfileOptionsReachTheActivityOptions(): void
+    {
+        $configuration = $this->build(900);
+
+        $inspect = $configuration->activityOptions(ActivityProfile::InspectGatewayCharge);
+        self::assertSame('payment-go-test', $inspect->taskQueue);
+        self::assertSame(20, $inspect->scheduleToStartTimeout->s);
+        self::assertSame(15, $inspect->startToCloseTimeout->s);
+        self::assertSame(60, $inspect->scheduleToCloseTimeout->s);
+        self::assertNotNull($inspect->retryOptions);
+        self::assertSame(['InvalidInspectionInput', 'UnsupportedContractVersion', 'GatewayRequestRejected'], $inspect->retryOptions->nonRetryableExceptions);
+        self::assertSame(2, $inspect->retryOptions->initialInterval?->s);
+        self::assertSame(10, $inspect->retryOptions->maximumInterval?->s);
+
+        $recovery = $configuration->activityOptions(ActivityProfile::ChargeRecovery);
+        self::assertSame('order-saga', $recovery->taskQueue, 'A profile without task_queue runs on the saga queue.');
+        self::assertSame(60, $recovery->scheduleToCloseTimeout->s);
+        self::assertNotNull($recovery->retryOptions);
+        self::assertSame(
+            $configuration->activityOptions(ActivityProfile::ChargePayment)->retryOptions?->nonRetryableExceptions,
+            $recovery->retryOptions->nonRetryableExceptions,
+            'The repeated charge fails for the same business reasons as the first one.',
+        );
+
+        $charge = $configuration->activityOptions(ActivityProfile::ChargePayment);
+        self::assertSame(0, $charge->scheduleToStartTimeout->s, 'ScheduleToStart is only set where the profile has it.');
+    }
+
+    /** T-M9-05 */
+    #[Group('T-M9-05')]
+    public function testProgrammaticSettingsAreValidatedToo(): void
+    {
+        $base = $this->build(900)->activities['inspect_gateway_charge'];
+        foreach ([
+            'empty queue' => self::inspection($base, '', 20, []),
+            'zero ScheduleToStart' => self::inspection($base, 'go', 0, []),
+            'ScheduleToStart above ScheduleToClose' => self::inspection($base, 'go', 61, []),
+            'type with a backslash' => self::inspection($base, 'go', 20, ['App\\Exception\\Foo']),
+            'lowercase type' => self::inspection($base, 'go', 20, ['gatewayError']),
+            'empty type' => self::inspection($base, 'go', 20, ['']),
+        ] as $case => $settings) {
+            try {
+                new SagaConfiguration('order-saga', 86400, ['inspect_gateway_charge' => $settings] + $this->build(900)->activities);
+                self::fail($case . ' must be rejected.');
+            } catch (InvalidSagaConfiguration) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    /** @param list<string> $types */
+    private static function inspection(ActivitySettings $base, ?string $queue, ?int $scheduleToStart, array $types): ActivitySettings
+    {
+        return new ActivitySettings(
+            $base->startToCloseSeconds,
+            $base->scheduleToCloseSeconds,
+            $base->initialIntervalSeconds,
+            $base->backoff,
+            $base->maxIntervalSeconds,
+            $base->maxAttempts,
+            [],
+            $queue,
+            $scheduleToStart,
+            $types,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $override keys of the `inspect_gateway_charge` row of the yaml table
+     */
+    #[Group('T-M9-05')]
+    #[DataProvider('brokenInspectionRows')]
+    public function testBrokenInspectionRowsAreRejected(array $override): void
+    {
+        $activities = $this->activities();
+        $activities['inspect_gateway_charge'] = $override + $activities['inspect_gateway_charge'];
+
+        $this->expectException(InvalidSagaConfiguration::class);
+
+        SagaConfiguration::fromParameters('order-saga', 86400, $activities, 900, 60);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function brokenInspectionRows(): iterable
+    {
+        yield 'empty task queue' => [['task_queue' => '']];
+        yield 'task queue is not a string' => [['task_queue' => 7]];
+        yield 'schedule_to_start is not an integer' => [['schedule_to_start' => '20']];
+        yield 'schedule_to_start is zero' => [['schedule_to_start' => 0]];
+        yield 'schedule_to_start above schedule_to_close' => [['schedule_to_start' => 61]];
+        yield 'non_retryable_types is not a list' => [['non_retryable_types' => 'GatewayRequestRejected']];
+        yield 'a type is a class name' => [['non_retryable_types' => ['App\\Exception\\Foo']]];
+        yield 'a type starts lowercase' => [['non_retryable_types' => ['gatewayRequestRejected']]];
+        yield 'a type is not a string' => [['non_retryable_types' => [1]]];
+    }
+
+    /** T-M9-05, EC-109: a profile the saga needs is missing. */
+    #[Group('T-M9-05')]
+    public function testMissingInspectionProfileIsRejected(): void
+    {
+        foreach (['inspect_gateway_charge', 'charge_recovery'] as $profile) {
+            $activities = $this->activities();
+            unset($activities[$profile]);
+
+            try {
+                SagaConfiguration::fromParameters('order-saga', 86400, $activities, 900, 60);
+                self::fail($profile . ' must be required.');
+            } catch (InvalidSagaConfiguration) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     private function build(int $ttl): SagaConfiguration
     {
         return SagaConfiguration::fromParameters('order-saga', 86400, $this->activities(), $ttl, 60);
@@ -160,6 +281,10 @@ final class SagaConfigurationTest extends TestCase
     {
         $activities = $this->parameters()['temporal.activities'];
         self::assertIsArray($activities);
+
+        // The yaml refers to the Go queue by a parameter that the container resolves; the test names it here.
+        self::assertIsArray($activities['inspect_gateway_charge'] ?? null);
+        $activities['inspect_gateway_charge']['task_queue'] = 'payment-go-test';
 
         /** @var array<string, array<string, mixed>> $activities */
         return $activities;
