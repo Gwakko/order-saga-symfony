@@ -17,6 +17,7 @@ use App\Shared\Domain\Money;
 use App\Shared\Infrastructure\Id\SymfonyUuidGenerator;
 use App\Shared\Infrastructure\Persistence\DbTimestamp;
 use App\Tests\Integration\Support\Infra;
+use App\Tests\Integration\Support\TemporalTestQueue;
 use App\Tests\Integration\Support\TestDatabase;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -34,6 +35,7 @@ abstract class IntegrationTestCase extends KernelTestCase
     {
         parent::setUp();
 
+        TemporalTestQueue::isolate();
         self::bootKernel(['environment' => 'test', 'debug' => false]);
         $connection = self::getContainer()->get(Connection::class);
 

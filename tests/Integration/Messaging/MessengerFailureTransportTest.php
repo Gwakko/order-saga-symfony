@@ -8,6 +8,7 @@ use App\Shared\Infrastructure\Outbox\MessengerOutboxPublisher;
 use App\Shared\Infrastructure\Outbox\OutboxMessage;
 use App\Shared\Infrastructure\Outbox\OutboxRelay;
 use App\Tests\Integration\IntegrationTestCase;
+use App\Tests\Integration\Support\TemporalTestQueue;
 use App\Tests\Integration\Support\Messenger\PoisonAwareOutboxHandler;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -24,6 +25,18 @@ final class MessengerFailureTransportTest extends IntegrationTestCase
 {
     private const string STREAM = 'domain_events_test';
     private const string FAILED_STREAM = 'domain_events_failed_test';
+
+    protected function tearDown(): void
+    {
+        // The consumer handles OrderPlaced like production does and starts the order saga on the test task queue.
+        try {
+            TemporalTestQueue::terminateRunningOnConfiguredServer();
+        } catch (\Throwable) {
+            // Temporal is not needed to pass these tests.
+        }
+
+        parent::tearDown();
+    }
 
     protected function setUp(): void
     {

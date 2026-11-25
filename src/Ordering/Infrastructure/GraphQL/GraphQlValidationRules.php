@@ -7,7 +7,6 @@ namespace App\Ordering\Infrastructure\GraphQL;
 use GraphQL\Validator\DocumentValidator;
 use GraphQL\Validator\Rules\DisableIntrospection;
 use GraphQL\Validator\Rules\QueryComplexity;
-use GraphQL\Validator\Rules\QueryDepth;
 use GraphQL\Validator\Rules\ValidationRule;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -29,7 +28,7 @@ final readonly class GraphQlValidationRules
     {
         return [
             ...array_values(DocumentValidator::defaultRules()),
-            new QueryDepth(self::MAX_DEPTH),
+            new QueryDepthExceptIntrospection(self::MAX_DEPTH, $this->introspectionEnabled),
             new QueryComplexity(self::MAX_COMPLEXITY),
             // The constant names read backwards: ENABLED switches the *rule* on, which forbids `__schema` and `__type`.
             new DisableIntrospection($this->introspectionEnabled ? DisableIntrospection::DISABLED : DisableIntrospection::ENABLED),

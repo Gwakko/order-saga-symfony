@@ -186,17 +186,79 @@ final class PlaceOrderIdempotencyTest extends FunctionalTestCase
         self::assertSame(0, $this->countRows('orders'));
     }
 
-    public function testValidationErrorIsStoredToo(): void
+    /**
+     * M8a: 02_use_cases.md section 5 stores 2xx and business errors only. A rejected input is not an answer to keep:
+     * the row is dropped and the same key may be used again with a corrected body.
+     */
+    #[Group('T-M8A-02')]
+    public function testValidationErrorIsNotStoredAndTheKeyCanBeReused(): void
+    {
+        $product = $this->seedProduct(1999);
+        $customer = self::uuid();
+        $bad = '{"productId":"abc","expectedPrice":{"amount":1,"currency":"EUR"}}';
+
+        $first = $this->request('POST', '/api/orders', $customer, $bad, ['Idempotency-Key' => 'v1']);
+        self::assertSame(422, $first->getStatusCode());
+        self::assertSame(0, $this->countRows('idempotency_keys'), 'the in_progress row is gone');
+
+        $second = $this->request('POST', '/api/orders', $customer, $bad, ['Idempotency-Key' => 'v1']);
+        self::assertSame(422, $second->getStatusCode());
+        self::assertFalse($second->headers->has('Idempotent-Replayed'), 'recomputed, not replayed');
+
+        $fixed = $this->placeOrder($customer, self::orderBody($product, 1999), 'v1');
+        self::assertSame(201, $fixed->getStatusCode(), (string) $fixed->getContent());
+        self::assertFalse($fixed->headers->has('Idempotent-Replayed'));
+        self::assertSame(1, $this->countRows('idempotency_keys'));
+    }
+
+    #[Group('T-M8A-03')]
+    public function testUnparsableBodyIsNotStoredAndTheKeyCanBeReused(): void
+    {
+        $product = $this->seedProduct(1999);
+        $customer = self::uuid();
+
+        $first = $this->request('POST', '/api/orders', $customer, '{not json', ['Idempotency-Key' => 'p1']);
+        self::assertGreaterThanOrEqual(400, $first->getStatusCode());
+        self::assertLessThan(500, $first->getStatusCode());
+        self::assertSame(0, $this->countRows('idempotency_keys'));
+
+        $fixed = $this->placeOrder($customer, self::orderBody($product, 1999), 'p1');
+        self::assertSame(201, $fixed->getStatusCode(), (string) $fixed->getContent());
+        self::assertFalse($fixed->headers->has('Idempotent-Replayed'));
+    }
+
+    #[Group('T-M8A-04')]
+    public function testUnknownFieldIsNotStoredAndTheKeyCanBeReused(): void
+    {
+        $product = $this->seedProduct(1999);
+        $customer = self::uuid();
+        $withExtra = '{"productId":"' . $product . '","expectedPrice":{"amount":1999,"currency":"EUR"},"surprise":1}';
+
+        $first = $this->request('POST', '/api/orders', $customer, $withExtra, ['Idempotency-Key' => 'x1']);
+        self::assertSame(422, $first->getStatusCode(), (string) $first->getContent());
+        self::assertSame(0, $this->countRows('idempotency_keys'));
+
+        $fixed = $this->placeOrder($customer, self::orderBody($product, 1999), 'x1');
+        self::assertSame(201, $fixed->getStatusCode(), (string) $fixed->getContent());
+    }
+
+    /**
+     * A 404 `ProductNotFound` raised by the handler (the only idempotent endpoint is placing an order) is a business
+     * answer and stays stored and replayed, unlike a rejected input.
+     */
+    #[Group('T-M8A-05')]
+    public function testNotFoundBusinessErrorIsStoredAndReplayed(): void
     {
         $customer = self::uuid();
-        $body = '{"productId":"abc","expectedPrice":{"amount":1,"currency":"EUR"}}';
+        $body = self::orderBody(self::uuid(), 1999);
 
-        $first = $this->request('POST', '/api/orders', $customer, $body, ['Idempotency-Key' => 'v1']);
-        $second = $this->request('POST', '/api/orders', $customer, $body, ['Idempotency-Key' => 'v1']);
+        $first = $this->placeOrder($customer, $body, 'n1');
+        $second = $this->placeOrder($customer, $body, 'n1');
 
-        self::assertSame(422, $first->getStatusCode());
-        self::assertSame(422, $second->getStatusCode());
+        self::assertSame(404, $first->getStatusCode(), (string) $first->getContent());
+        self::assertSame(404, $second->getStatusCode());
         self::assertSame('true', $second->headers->get('Idempotent-Replayed'));
+        self::assertSame(1, $this->countRows('idempotency_keys'));
     }
 
     /**

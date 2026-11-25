@@ -132,4 +132,55 @@ final class DbalKeyInventoryTest extends IntegrationTestCase
     {
         self::assertNull($this->infra->keys->find(ProductKeyId::fromString(self::uuid())));
     }
+
+    /**
+     * M8a: saving a key twice, and continuing with a key after `save`, never writes an event twice.
+     */
+    #[Group('T-M8A-09')]
+    public function testSavingARevokedKeyTwiceIsAConflictAndWritesTheEventOnce(): void
+    {
+        $product = $this->seedProduct();
+        [$key] = $this->seedKeys($product->id, 1);
+        $revoked = $key->revoke(null, $this->t0);
+        $this->infra->keys->save($revoked);
+
+        try {
+            $this->infra->keys->save($revoked);
+            self::fail('the second save of the same state must be refused');
+        } catch (ConcurrencyConflict) {
+            self::assertSame(1, $this->countRows('outbox_messages', "event_type = 'KeyRevoked'"));
+        }
+    }
+
+    #[Group('T-M8A-10')]
+    public function testContinuingASavedKeyDoesNotRepublishEarlierEvents(): void
+    {
+        $product = $this->seedProduct();
+        [$key] = $this->seedKeys($product->id, 1);
+
+        $reserved = $key->reserve();
+        $this->infra->keys->save($reserved);
+        $sold = $reserved->sell();
+        $this->infra->keys->save($sold);
+        $this->infra->keys->save($sold->revoke(OrderId::fromString(self::uuid()), $this->t0));
+        $stored = $this->infra->keys->find($key->id);
+
+        self::assertSame(KeyStatus::Revoked, $stored?->status);
+        self::assertSame(1, $this->countRows('outbox_messages', "event_type = 'KeyRevoked'"));
+        self::assertSame(1, $this->countRows('outbox_messages'));
+    }
+
+    #[Group('T-M8A-11')]
+    public function testSavingAKeyAfterLoadingItWritesOnlyTheNewEvent(): void
+    {
+        $product = $this->seedProduct();
+        [$key] = $this->seedKeys($product->id, 1);
+        $this->infra->keys->save($key->reserve());
+
+        $loaded = $this->infra->keys->find($key->id) ?? throw new \LogicException('key is missing');
+        $this->infra->keys->save($loaded->release());
+
+        self::assertSame(0, $this->countRows('outbox_messages'), 'plain transitions of a key have no event');
+        self::assertSame(KeyStatus::Available, $this->infra->keys->find($key->id)?->status);
+    }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Inventory\Infrastructure\Persistence;
 
 use App\Inventory\Application\Port\ReservationRepository;
+use App\Inventory\Domain\Event\ReservationEvent;
 use App\Inventory\Domain\KeyReservation;
 use App\Inventory\Domain\ReservationStatus;
 use App\Shared\Application\Exception\ConcurrencyConflict;
@@ -77,7 +78,12 @@ final readonly class DbalReservationRepository implements ReservationRepository
                 throw new ConcurrencyConflict('KeyReservation', $reservation->id->value);
             }
 
-            $this->outbox->append($reservation->pendingEvents);
+            // The aggregate keeps the events of earlier saves when the application continues with it after `save`;
+            // only the event of this transition (version of the aggregate now) goes to the outbox (M8a, see Payment).
+            $this->outbox->append(array_values(array_filter(
+                $reservation->pendingEvents,
+                static fn(ReservationEvent $event): bool => $event->aggregateVersion() >= $reservation->version,
+            )));
         });
     }
 

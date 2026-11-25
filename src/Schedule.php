@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App;
 
 use App\Inventory\Infrastructure\Schedule\ExpireReservationsTick;
+use App\Ordering\Infrastructure\Schedule\SweepStuckOrdersTick;
 use App\Payment\Infrastructure\Schedule\ReconcilePaymentsTick;
+use App\Shared\Infrastructure\Schedule\PurgeIdempotencyKeysTick;
 use Symfony\Component\Scheduler\Attribute\AsSchedule;
 use Symfony\Component\Scheduler\RecurringMessage;
 use Symfony\Component\Scheduler\Schedule as SymfonySchedule;
@@ -30,6 +32,8 @@ class Schedule implements ScheduleProviderInterface
             ->add(
                 RecurringMessage::every('30 seconds', new ExpireReservationsTick(500)),
                 RecurringMessage::every('5 minutes', new ReconcilePaymentsTick(300, 200)),
+                RecurringMessage::every('5 minutes', new SweepStuckOrdersTick(100)),
+                RecurringMessage::every('1 hour', new PurgeIdempotencyKeysTick(10_000)),
             );
     }
 }

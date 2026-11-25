@@ -15,17 +15,19 @@ use PHPUnit\Framework\Attributes\Group;
 final class GraphQlLimitsTest extends GraphQlTestCase
 {
     /**
-     * The schema has no recursive type, so introspection (`ofType` nests without bound) is the way to build depth.
+     * The schema has no recursive type, so a deep regular query can only be built from fields that do not exist: the
+     * request is refused by validation (400) and the depth error is among the errors. The exact boundary (8 passes, 9
+     * fails) is covered with a recursive schema in GraphQlValidationRulesTest (T-M8A-01).
      */
-    private static function nested(int $ofTypeLevels): string
+    private static function nonexistentChain(int $levels): string
     {
         $inner = '{ name }';
 
-        for ($i = 0; $i < $ofTypeLevels; ++$i) {
-            $inner = sprintf('{ ofType %s }', $inner);
+        for ($i = 0; $i < $levels; ++$i) {
+            $inner = sprintf('{ a %s }', $inner);
         }
 
-        return sprintf('{ __type(name: "Query") { fields { type %s } } }', $inner);
+        return sprintf('{ myOrders %s }', $inner);
     }
 
     private static function aliases(int $count, string $selection): string
@@ -40,27 +42,34 @@ final class GraphQlLimitsTest extends GraphQlTestCase
     }
 
     #[Group('T-F-30')]
-    public function testQueryAtTheDepthLimitRuns(): void
-    {
-        // __type (0) > fields (1) > type (2) > six ofType = depth 8.
-        $response = $this->graphql(self::nested(6), self::uuid());
-
-        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        self::assertArrayNotHasKey('errors', self::json($response));
-    }
-
-    #[Group('T-F-30')]
     public function testQueryDeeperThanTheLimitIsRejectedBeforeAnyResolver(): void
     {
         $this->recorder()->reset();
-        $response = $this->graphql(self::nested(7), self::uuid());
+        $response = $this->graphql(self::nonexistentChain(9), self::uuid());
         $body = self::json($response);
+        $messages = implode("\n", array_map(static fn(mixed $e): string => is_array($e) ? self::str($e['message'] ?? null) : '', (array) ($body['errors'] ?? [])));
 
         self::assertSame(400, $response->getStatusCode());
         self::assertArrayNotHasKey('data', $body);
         self::assertSame('GRAPHQL_VALIDATION_FAILED', self::errorCode($response));
-        self::assertStringContainsString('Max query depth should be 8 but got 9', self::str(self::firstError($response)['message']));
+        self::assertStringContainsString('Max query depth should be 8 but got 9', $messages);
         self::assertSame([], $this->recorder()->statements());
+    }
+
+    #[Group('T-M8A-01')]
+    public function testDeepIntrospectionQueryRunsOutsideProduction(): void
+    {
+        // ofType nested 7 times: depth 11 for the old uniform limit, ignored now that introspection is on.
+        $inner = '{ name }';
+
+        for ($i = 0; $i < 7; ++$i) {
+            $inner = sprintf('{ ofType %s }', $inner);
+        }
+
+        $response = $this->graphql(sprintf('{ __type(name: "Query") { fields { type %s } } }', $inner), self::uuid());
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertArrayNotHasKey('errors', self::json($response));
     }
 
     #[Group('T-F-30')]
@@ -107,14 +116,15 @@ final class GraphQlLimitsTest extends GraphQlTestCase
     }
 
     /**
-     * Known consequence of one uniform depth limit: the full query of GraphiQL (`TypeRef` nests seven `ofType`) is
-     * depth 11. Tools that send smaller queries, and `__type`/`__schema` lookups by hand, work.
+     * M8a: the full query of GraphiQL (depth 11 by plain counting) runs where introspection is on.
      */
-    public function testTheFullStandardIntrospectionQueryExceedsTheDepthLimit(): void
+    #[Group('T-M8A-01')]
+    public function testTheFullStandardIntrospectionQueryRunsOutsideProduction(): void
     {
         $response = $this->graphql(Introspection::getIntrospectionQuery(), self::uuid());
 
-        self::assertSame(400, $response->getStatusCode());
-        self::assertStringContainsString('Max query depth should be 8 but got 11', self::str(self::firstError($response)['message']));
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertArrayNotHasKey('errors', self::json($response));
+        self::assertArrayHasKey('__schema', self::data($response));
     }
 }

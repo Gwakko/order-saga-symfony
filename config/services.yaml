@@ -9,6 +9,8 @@
 parameters:
     inventory.reservation_ttl_seconds: 900
     payment.charge_guard_seconds: 60
+    # Sweeper (M8a): an order in an intermediate status untouched this long and without a running workflow goes to manual review.
+    app.stuck_orders.older_than_seconds: 1800
     # Introspection is a development aid: off in prod (M7.2, EC-82).
     graphql.introspection_enabled: true
 
@@ -100,6 +102,7 @@ services:
     App\Ordering\Application\Port\OrderSagaStarter: '@App\Saga\Infrastructure\Temporal\TemporalOrderSagaStarter'
     App\Ordering\Application\Port\OrderRefundStarter: '@App\Saga\Infrastructure\Temporal\TemporalOrderRefundStarter'
     App\Ordering\Application\Port\OrderSagaSignals: '@App\Saga\Infrastructure\Temporal\TemporalOrderSagaSignals'
+    App\Ordering\Application\Port\WorkflowStatusChecker: '@App\Saga\Infrastructure\Temporal\TemporalWorkflowStatusChecker'
 
     # Activities are fetched from the container by the worker.
     App\Saga\Infrastructure\Temporal\Activity\InventoryActivitiesImpl:

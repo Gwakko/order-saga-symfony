@@ -6,6 +6,7 @@ namespace App\Shared\Infrastructure\Idempotency;
 
 use App\Shared\Domain\Identifier\CustomerId;
 use App\Shared\Infrastructure\Http\CustomerIdHeader;
+use App\Shared\Infrastructure\Http\ExceptionToProblemListener;
 use App\Shared\Infrastructure\Http\Problem\ProblemDetails;
 use App\Shared\Infrastructure\Idempotency\Exception\IdempotencyKeyReused;
 use App\Shared\Infrastructure\Idempotency\Exception\IdempotentRequestInProgress;
@@ -23,8 +24,8 @@ use Symfony\Component\HttpKernel\KernelEvents;
  *
  * - `kernel.controller` (before arguments are resolved, so before any payload validation and before the handler):
  *   checks the key, registers the request in the store and either lets it run, replays the stored answer, or refuses.
- * - `kernel.response`: stores the answer of a request this listener started (2xx and 4xx), or forgets the key after
- *   a server error so the client can retry (EC-07). Error responses from the exception listener pass through here too.
+ * - `kernel.response`: stores the answer of a request this listener started (2xx and 4xx business errors; a rejected or unparsable input is not stored), or forgets the key after
+ *   a server error or a rejected input so the client can retry (EC-07). Error responses from the exception listener pass through here too.
  */
 final readonly class IdempotencyListener
 {
@@ -84,7 +85,11 @@ final readonly class IdempotencyListener
         $response = $event->getResponse();
         $status = $response->getStatusCode();
         $body = (string) $response->getContent();
-        $storable = $status >= Response::HTTP_OK && $status < Response::HTTP_INTERNAL_SERVER_ERROR && $status !== Response::HTTP_NOT_MODIFIED && json_validate($body);
+        $storable = $status >= Response::HTTP_OK
+            && $status < Response::HTTP_INTERNAL_SERVER_ERROR
+            && $status !== Response::HTTP_NOT_MODIFIED
+            && $request->attributes->get(ExceptionToProblemListener::INPUT_REJECTED_ATTRIBUTE) !== true
+            && json_validate($body);
 
         if ($storable) {
             $this->store->complete($customerId, $key, $status, $body);

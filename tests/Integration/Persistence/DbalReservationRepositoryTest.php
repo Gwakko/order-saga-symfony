@@ -104,4 +104,56 @@ final class DbalReservationRepositoryTest extends IntegrationTestCase
         self::assertCount(1, $this->infra->reservations->findExpired($this->t0->modify('+1020 seconds'), 1));
         self::assertSame([], $this->infra->reservations->findExpired($this->t0->modify('+899 seconds'), 10));
     }
+
+    /**
+     * M8a: the aggregate keeps the events of earlier saves, so continuing with it after `save` must publish only the
+     * event of the new transition (the same defect as DbalPaymentRepository::save in M4.6: a duplicate outbox key).
+     */
+    #[Group('T-M8A-06')]
+    public function testContinuingASavedReservationDoesNotRepublishEarlierEvents(): void
+    {
+        $created = $this->reservation();
+        $this->infra->reservations->save($created);
+
+        $consumed = $created->consume($created->orderId, $this->t0->modify('+1 minute'));
+        $this->infra->reservations->save($consumed);
+
+        self::assertSame(['KeyReserved', 'KeySold'], $this->outboxEventTypes());
+        self::assertSame(ReservationStatus::Consumed, $this->reload($created->orderId)->status);
+    }
+
+    #[Group('T-M8A-07')]
+    public function testSavingAReservationAfterLoadingItWritesOnlyTheNewEvent(): void
+    {
+        $created = $this->reservation();
+        $this->infra->reservations->save($created);
+
+        $this->infra->reservations->save($this->reload($created->orderId)->release($this->t0->modify('+1 minute')));
+
+        self::assertSame(['KeyReserved', 'KeyReleased'], $this->outboxEventTypes());
+    }
+
+    #[Group('T-M8A-08')]
+    public function testSavingAReservationTwiceWithTheSameEventsIsAConflictAndWritesNothingMore(): void
+    {
+        $created = $this->reservation();
+        $this->infra->reservations->save($created);
+        $released = $created->release($this->t0->modify('+1 minute'));
+        $this->infra->reservations->save($released);
+
+        try {
+            $this->infra->reservations->save($released);
+            self::fail('the second save of the same state must be refused');
+        } catch (ConcurrencyConflict) {
+            self::assertSame(['KeyReserved', 'KeyReleased'], $this->outboxEventTypes());
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function outboxEventTypes(): array
+    {
+        return array_map(static fn(mixed $type): string => is_string($type) ? $type : '', $this->connection->fetchFirstColumn('SELECT event_type FROM outbox_messages ORDER BY aggregate_version'));
+    }
 }

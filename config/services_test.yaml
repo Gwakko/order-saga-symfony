@@ -25,6 +25,12 @@ services:
     App\Inventory\Infrastructure\Persistence\DbalProductReadModel: ~
     App\Inventory\Infrastructure\Schedule\ExpireReservationsTickHandler: ~
     App\Payment\Infrastructure\Schedule\ReconcilePaymentsTickHandler: ~
+    App\Ordering\Infrastructure\Schedule\SweepStuckOrdersTickHandler: ~
+    App\Shared\Infrastructure\Schedule\PurgeIdempotencyKeysTickHandler: ~
+    App\Ordering\Application\Command\SweepStuckOrders\SweepStuckOrdersHandler: ~
+    App\Shared\Application\Command\PurgeIdempotencyKeys\PurgeIdempotencyKeysHandler: ~
+    App\Ordering\Infrastructure\Persistence\DbalStuckOrderFinder: ~
+    App\Shared\Infrastructure\Idempotency\DbalIdempotencyKeyCleaner: ~
 
     # Functional tests (tests/Functional) reach the HTTP stack through the kernel; this port is replaced to simulate failures (EC-07).
     App\Inventory\Infrastructure\Persistence\DbalProductCatalog: ~

@@ -30,6 +30,20 @@ final class GraphQlIntrospectionProdTest extends TestCase
         }
     }
 
+    #[Group('T-M8A-01')]
+    public function testFullIntrospectionQueryIsRefusedInProductionWithTheDepthLimitKept(): void
+    {
+        $response = self::post(\GraphQL\Type\Introspection::getIntrospectionQuery());
+        $body = strtolower((string) $response->getContent());
+
+        // Actual behaviour of the real prod kernel: 400, validation errors only, no data; both the introspection and
+        // the depth (11 > 8: the exemption is off in prod) errors are listed.
+        self::assertSame(400, $response->getStatusCode(), $body);
+        self::assertStringContainsString('introspection is not allowed', $body);
+        self::assertStringContainsString('max query depth should be 8', $body);
+        self::assertStringNotContainsString('"data"', $body);
+    }
+
     public function testRegularQueriesStillValidateInProduction(): void
     {
         $response = self::post('{ __typename }');

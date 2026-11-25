@@ -93,7 +93,12 @@ final class RefundRetryTest extends IntegrationTestCase
         $this->workflowId = SagaConfiguration::REFUND_WORKFLOW_ID_PREFIX . $order->id->value;
 
         $stub = $this->client()->newUntypedRunningWorkflowStub($this->workflowId);
-        $result = $stub->getResult('string', 60);
+
+        try {
+            $result = $stub->getResult('string', 60);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('The refund workflow did not finish: ' . $e->getMessage() . "\n" . $this->diagnostics(), 0, $e);
+        }
 
         self::assertSame('Refunded', $result);
         $refund = $this->emulator->stats()['refunds']['refund-' . $payment->id->value];
@@ -131,6 +136,26 @@ final class RefundRetryTest extends IntegrationTestCase
         $stored = $this->infra->payments->findByOrder($payment->orderId) ?? throw new \LogicException('payment not stored');
         self::assertSame(PaymentStatus::Refunded, $stored->status);
         self::assertSame($first->refundId, $stored->gatewayRefundId, 'the same refund id as the first request');
+    }
+
+    /** Everything needed to explain a timeout without a second run: server-side status and history, and the worker log. */
+    private function diagnostics(): string
+    {
+        $lines = [];
+
+        try {
+            $info = $this->client()->newUntypedRunningWorkflowStub($this->workflowId ?? throw new \LogicException('The refund was not started.'))->describe()->info;
+            $lines[] = sprintf('status=%s history_length=%d', $info->status->name, $info->historyLength);
+
+            foreach ($this->client()->getWorkflowHistory($info->execution)->getEvents() as $event) {
+                $name = EventType::name($event->getEventType());
+                $lines[] = sprintf('#%d %s', $event->getEventId(), is_string($name) ? $name : (string) $event->getEventType());
+            }
+        } catch (\Throwable $e) {
+            $lines[] = 'history unavailable: ' . $e->getMessage();
+        }
+
+        return implode("\n", $lines) . "\nworker output:\n" . ($this->worker?->output() ?? '');
     }
 
     /** The attempt number of the last start of `RefundPayment`, from the workflow history. */

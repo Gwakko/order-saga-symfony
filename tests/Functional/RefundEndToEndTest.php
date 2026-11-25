@@ -17,6 +17,7 @@ use App\Shared\Infrastructure\Persistence\Row;
 use App\Tests\Integration\Support\GatewayEmulator;
 use App\Tests\Integration\Support\Infra;
 use App\Tests\Integration\Support\RefundFixture;
+use App\Tests\Integration\Support\TemporalTestQueue;
 use App\Tests\Integration\Support\TemporalTestWorker;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
@@ -34,6 +35,7 @@ final class RefundEndToEndTest extends FunctionalTestCase
 
     protected function setUp(): void
     {
+        TemporalTestQueue::isolate();
         parent::setUp();
 
         $this->emulator = GatewayEmulator::fromEnvironment();

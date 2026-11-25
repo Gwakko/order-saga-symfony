@@ -130,4 +130,38 @@ final class DbalOrderRepositoryTest extends IntegrationTestCase
         self::assertStringNotContainsString('SECRET-CODE-1234', $all);
         self::assertStringContainsString('1234', $all);
     }
+
+    /**
+     * M8a: unlike Payment and Reservation, the Order CAS counts the pending events (`version - count(events)`), so an
+     * aggregate that is continued after `save` is refused instead of re-publishing: a safe failure, no duplicate
+     * outbox row (the handlers reload the order before every transition, see the report M8a).
+     */
+    #[Group('T-M8A-12')]
+    public function testContinuingASavedOrderIsRefusedAndWritesNoDuplicateEvents(): void
+    {
+        $order = $this->placeOrder();
+        $this->infra->orders->save($order);
+        $continued = $order->markKeyReserved(ReservationId::fromString(self::uuid()), $this->t0->modify('+1 minute'));
+
+        try {
+            $this->infra->orders->save($continued);
+            self::fail('a continued aggregate is refused');
+        } catch (ConcurrencyConflict) {
+            self::assertSame(1, $this->countRows('outbox_messages'));
+            self::assertSame(1, $this->infra->orders->get($order->id)->version);
+        }
+    }
+
+    #[Group('T-M8A-13')]
+    public function testSavingAnOrderAfterLoadingItWritesOnlyTheNewEvents(): void
+    {
+        $order = $this->placeOrder();
+        $this->infra->orders->save($order);
+
+        $loaded = $this->infra->orders->get($order->id);
+        $this->infra->orders->save($loaded->markKeyReserved(ReservationId::fromString(self::uuid()), $this->t0->modify('+1 minute')));
+
+        $types = array_map(static fn(mixed $type): string => is_string($type) ? $type : '', $this->connection->fetchFirstColumn('SELECT event_type FROM outbox_messages ORDER BY aggregate_version'));
+        self::assertSame(['OrderPlaced', 'OrderKeyReserved'], $types);
+    }
 }

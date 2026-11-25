@@ -40,6 +40,14 @@ final class InMemoryOrderRepository implements OrderRepository
         return $this->orders[$id->value] ?? throw new OrderNotFound($id);
     }
 
+    /**
+     * @return list<Order>
+     */
+    public function all(): array
+    {
+        return array_values($this->orders);
+    }
+
     public function find(OrderId $id): ?Order
     {
         return $this->orders[$id->value] ?? null;

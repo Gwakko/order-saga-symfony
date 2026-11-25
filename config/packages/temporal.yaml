@@ -91,4 +91,8 @@ parameters:
 when@test:
     parameters:
         # Nobody polls this queue: integration tests may start workflows without the compose worker picking them up.
-        temporal.task_queue: order-saga-test
+        # tests/bootstrap.php sets TEMPORAL_TASK_QUEUE to a name unique to the PHPUnit run (the worker and the
+        # `messenger:consume` processes of the run inherit it), so workflows and tasks left on the shared dev server by
+        # earlier runs are never served to this run's worker.
+        env(TEMPORAL_TASK_QUEUE): order-saga-test
+        temporal.task_queue: '%env(TEMPORAL_TASK_QUEUE)%'

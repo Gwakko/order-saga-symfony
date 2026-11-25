@@ -29,6 +29,13 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
 #[AsEventListener(event: KernelEvents::EXCEPTION, priority: 0)]
 final readonly class ExceptionToProblemListener
 {
+    /**
+     * Set on the request when the failure is a rejected or unparsable input (validation, unknown fields, an HTTP
+     * error raised while reading the request) rather than a business answer: the idempotency listener does not
+     * store such an answer, so the client can fix the body and reuse the key (02_use_cases.md section 5, M8a).
+     */
+    public const string INPUT_REJECTED_ATTRIBUTE = '_input_rejected';
+
     public function __construct(private SerializerInterface $serializer, private LoggerInterface $logger) {}
 
     public function __invoke(ExceptionEvent $event): void
@@ -39,6 +46,10 @@ final readonly class ExceptionToProblemListener
 
         $exception = $event->getThrowable();
         $problem = $this->describe($exception);
+
+        if (self::isInputRejection($exception)) {
+            $event->getRequest()->attributes->set(self::INPUT_REJECTED_ATTRIBUTE, true);
+        }
 
         if ($problem->status >= Response::HTTP_INTERNAL_SERVER_ERROR) {
             $this->logger->error('Request failed with a server error.', ['exception' => $exception]);
@@ -88,6 +99,31 @@ final readonly class ExceptionToProblemListener
 
         // Never leak internals of an unexpected failure.
         return self::problem(Response::HTTP_INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR');
+    }
+
+    private static function isInputRejection(\Throwable $exception): bool
+    {
+        if (self::find($exception, ValidationFailedException::class) !== null || self::find($exception, ExtraAttributesException::class) !== null) {
+            return true;
+        }
+
+        $domain = self::find($exception, DomainError::class);
+
+        if ($domain === null) {
+            return $exception instanceof HttpExceptionInterface;
+        }
+
+        // Malformed values of the request (ids, money amounts, currency codes) are input, not a business answer.
+        return match ($domain->code()) {
+            DomainErrorCode::ValidationFailed,
+            DomainErrorCode::InvalidIdentifier,
+            DomainErrorCode::NegativeMoney,
+            DomainErrorCode::NonPositiveMoney,
+            DomainErrorCode::MoneyOutOfRange,
+            DomainErrorCode::MoneyOverflow,
+            DomainErrorCode::UnknownCurrency => true,
+            default => false,
+        };
     }
 
     private static function fromDomainError(DomainError $error): ProblemDetails

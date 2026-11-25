@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Inventory\Infrastructure\Persistence;
 
 use App\Inventory\Application\Port\KeyInventory;
+use App\Inventory\Domain\Event\KeyRevoked;
 use App\Inventory\Domain\KeyStatus;
 use App\Inventory\Domain\ProductKey;
 use App\Shared\Application\Exception\ConcurrencyConflict;
@@ -73,7 +74,11 @@ final readonly class DbalKeyInventory implements KeyInventory
                 throw new ConcurrencyConflict('ProductKey', $key->id->value);
             }
 
-            $this->outbox->append($key->pendingEvents);
+            // Only the event of this transition: the aggregate keeps the events of earlier saves (M8a, see Payment).
+            $this->outbox->append(array_values(array_filter(
+                $key->pendingEvents,
+                static fn(KeyRevoked $event): bool => $event->aggregateVersion() >= $key->version,
+            )));
         });
     }
 
