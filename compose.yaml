@@ -68,8 +68,9 @@ services:
     image: temporalio/temporal:1.10.1
     command: ["server", "start-dev", "--ip", "0.0.0.0"]
     ports:
-      - "7233:7233"
-      - "8233:8233"
+      # Host port is configurable: CI runs PHP on the runner, where 7233 belongs to temporal-test-server (make test-wf).
+      - "${TEMPORAL_HOST_PORT:-7233}:7233"
+      - "${TEMPORAL_UI_HOST_PORT:-8233}:8233"
 
   gateway-emulator:
     image: php:8.5-cli-alpine

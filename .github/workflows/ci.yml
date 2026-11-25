@@ -11,6 +11,7 @@ jobs:
   ci:
     name: PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +50,9 @@ jobs:
       TEMPORAL_ADDRESS: 127.0.0.1:7234
       # Gateway emulator runs on the runner (in compose it is a separate service).
       PAYMENT_GATEWAY_URL: http://127.0.0.1:8081
+      # compose `temporal` (make go-test-int) must not take host port 7233: temporal-test-server uses it in make test-wf.
+      TEMPORAL_HOST_PORT: "7235"
+      TEMPORAL_UI_HOST_PORT: "8235"
 
     steps:
       - name: Checkout
