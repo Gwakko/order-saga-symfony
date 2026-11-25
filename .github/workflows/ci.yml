@@ -47,6 +47,8 @@ jobs:
       MESSENGER_TRANSPORT_DSN: redis://127.0.0.1:6379/messages
       # Dev server for the consumer integration test (T-I-20). Port 7233 stays free for temporal-test-server (make test-wf).
       TEMPORAL_ADDRESS: 127.0.0.1:7234
+      # Gateway emulator runs on the runner (in compose it is a separate service).
+      PAYMENT_GATEWAY_URL: http://127.0.0.1:8081
 
     steps:
       - name: Checkout
@@ -85,6 +87,12 @@ jobs:
         run: |
           ./vendor/bin/rr get-binary --location /usr/local/bin || (./vendor/bin/rr get-binary && sudo mv rr /usr/local/bin/rr)
           php bin/install-temporal-test-server.php
+
+      - name: Start gateway emulator
+        run: |
+          cd gateway-emulator
+          PHP_CLI_SERVER_WORKERS=8 nohup php -S 127.0.0.1:8081 -t public > /tmp/gateway-emulator.log 2>&1 &
+          for i in $(seq 30); do (echo > /dev/tcp/127.0.0.1/8081) 2>/dev/null && break; sleep 1; done
 
       - name: Run checks
         run: make ci PHP=
