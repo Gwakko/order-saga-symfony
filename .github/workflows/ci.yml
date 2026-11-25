@@ -44,7 +44,7 @@ jobs:
       APP_ENV: test
       DATABASE_URL: postgresql://app:app@127.0.0.1:5432/app?serverVersion=17&charset=utf8
       REDIS_URL: redis://127.0.0.1:6379
-      MESSENGER_TRANSPORT_DSN: redis://127.0.0.1:6379/messages
+      MESSENGER_TRANSPORT_DSN: redis://127.0.0.1:6379?serializer=0
       # Dev server for the consumer integration test (T-I-20). Port 7233 stays free for temporal-test-server (make test-wf).
       TEMPORAL_ADDRESS: 127.0.0.1:7234
       # Gateway emulator runs on the runner (in compose it is a separate service).
