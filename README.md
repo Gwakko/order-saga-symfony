@@ -181,3 +181,7 @@ make test-go-e2e                                        # поднимает Go-
 - Спецификация: `docs/spec/` ([обзор](docs/spec/00_overview.md), [домен](docs/spec/01_domain.md), [use cases](docs/spec/02_use_cases.md), [сага](docs/spec/03_saga.md), [крайние случаи](docs/spec/04_edge_cases.md), [тесты](docs/spec/05_testing.md), [этапы](docs/spec/06_milestones.md), [открытые вопросы](docs/spec/07_open_questions.md), [карта покрытия](docs/spec/08_coverage.md), [Go-воркер](docs/spec/09_go_worker.md)).
 - Отчёты по этапам: `docs/reports/` (`M1.1` ... `M9.5`; про нестабильный тест: `M8a-flaky.md`).
 - Эмулятор шлюза и его режимы: `gateway-emulator/README.md`. Контракт Go-воркера: `contracts/inspect-gateway-charge/v1/README.md`.
+
+## Лицензия
+
+MIT, см. [LICENSE](LICENSE).

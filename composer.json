@@ -2,7 +2,7 @@
     "name": "example/order-saga-symfony",
     "description": "Order fulfillment saga example: Symfony, DBAL, Temporal.",
     "type": "project",
-    "license": "proprietary",
+    "license": "MIT",
     "minimum-stability": "stable",
     "prefer-stable": true,
     "require": {
