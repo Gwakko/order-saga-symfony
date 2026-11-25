@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 PHP ?= docker compose exec -T php
 
-.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func ci
+.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage ci
 
 help:
 	@grep -E "^[a-z-]+:" Makefile | cut -d: -f1
@@ -49,9 +49,14 @@ test-wf:
 test-func:
 	$(PHP) vendor/bin/phpunit --testsuite functional
 
+# Every EC row of docs/spec/04_edge_cases.md must reference tests that exist (#[Group('T-...')]); regenerate docs/spec/08_coverage.md with `$(PHP) bin/check-edge-case-coverage --markdown`.
+check-coverage:
+	$(PHP) bin/check-edge-case-coverage
+
 ci:
 	$(PHP) composer validate --strict
 	$(MAKE) cs
+	$(MAKE) check-coverage
 	$(MAKE) phpstan
 	$(MAKE) test-unit
 	$(MAKE) test-int

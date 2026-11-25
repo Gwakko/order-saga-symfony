@@ -130,6 +130,7 @@ final class RefundRetryTest extends IntegrationTestCase
         $output = $this->refundHandler()(new RefundPaymentCommand($payment->orderId->value));
 
         self::assertSame('Refunded', $output->status->value);
+        self::assertSame(1, array_sum(array_column($this->emulator->stats()['refunds'], 'executed')), 'the money went back once in total, whatever key the retry used');
         $refund = $this->emulator->stats()['refunds']['refund-' . $payment->id->value];
         self::assertSame(2, $refund['requests']);
         self::assertSame(1, $refund['executed'], 'the retry did not move money again');
