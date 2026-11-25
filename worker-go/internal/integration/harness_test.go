@@ -51,7 +51,7 @@ func TestMain(m *testing.M) {
 	}
 
 	workerBinary = filepath.Join(dir, "worker")
-	build := exec.Command("go", "build", "-o", workerBinary, "order-saga-symfony/worker-go/cmd/worker")
+	build := exec.Command("go", "build", "-buildvcs=false", "-o", workerBinary, "order-saga-symfony/worker-go/cmd/worker")
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "build worker: %v\n%s", err, out)
 		_ = os.RemoveAll(dir)
