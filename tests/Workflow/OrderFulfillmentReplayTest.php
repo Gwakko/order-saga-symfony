@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Workflow;
 
+use App\Payment\Application\Exception\CircuitOpen;
 use App\Saga\Infrastructure\Temporal\Workflow\OrderFulfillmentWorkflow;
 use PHPUnit\Framework\Attributes\Group;
 use Temporal\Testing\Replay\Exception\NonDeterministicWorkflowException;
@@ -20,6 +21,7 @@ use Temporal\Testing\Replay\WorkflowReplayer;
 final class OrderFulfillmentReplayTest extends OrderSagaWorkflowTestCase
 {
     private const string FIXTURE = __DIR__ . '/Fixtures/history-happy.json';
+    private const string CHARGE_EXHAUSTED_V0_FIXTURE = __DIR__ . '/Fixtures/history-charge-exhausted-v0.json';
 
     #[Group('T-W-20')]
     public function testHappyPathHistoryStillReplays(): void
@@ -80,5 +82,41 @@ final class OrderFulfillmentReplayTest extends OrderSagaWorkflowTestCase
         (new WorkflowReplayer())->downloadHistory(OrderFulfillmentWorkflow::TYPE, $run->getExecution(), self::FIXTURE);
 
         self::assertFileExists(self::FIXTURE);
+    }
+
+    /**
+     * T-W-21 (EC-34, EC-108): the history of the branch "ChargePayment exhausted its retries" recorded by the workflow
+     * code BEFORE M9 (no gateway inspection). Replayed by the current code, it proves that workflows started before the
+     * inspection branch existed stay deterministic; the branch must sit behind `Workflow::getVersion`.
+     */
+    #[Group('T-W-21')]
+    public function testChargeExhaustedV0HistoryStillReplays(): void
+    {
+        self::assertFileExists(self::CHARGE_EXHAUSTED_V0_FIXTURE, 'Record it with `make wf-record-history FILTER=testRecordChargeExhaustedHistory`.');
+
+        (new WorkflowReplayer())->replayFromJSON(OrderFulfillmentWorkflow::TYPE, self::CHARGE_EXHAUSTED_V0_FIXTURE);
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Not part of the suite (`make wf-record-history FILTER=testRecordChargeExhaustedHistory`). Records the EC-34 branch
+     * (the breaker stays open for the whole ScheduleToClose of the charge, mocks as in T-W-07). It was recorded once by the
+     * pre-M9 workflow; never re-record it after the workflow changed: it is the "old history" half of the compatibility check.
+     */
+    public function testRecordChargeExhaustedHistory(): void
+    {
+        if (getenv('RECORD_HISTORY') !== '1') {
+            self::markTestSkipped('Set RECORD_HISTORY=1 (make wf-record-history FILTER=...) to record tests/Workflow/Fixtures/history-charge-exhausted-v0.json.');
+        }
+
+        $this->mockHappyPath();
+        $this->activityMocks->expectFailure('ChargePayment', new CircuitOpen());
+        $run = $this->startSaga('0190a5c4-0000-7000-8000-000000000021');
+        self::assertSame('Failed', $this->resultOf($run));
+
+        (new WorkflowReplayer())->downloadHistory(OrderFulfillmentWorkflow::TYPE, $run->getExecution(), self::CHARGE_EXHAUSTED_V0_FIXTURE);
+
+        self::assertFileExists(self::CHARGE_EXHAUSTED_V0_FIXTURE);
     }
 }

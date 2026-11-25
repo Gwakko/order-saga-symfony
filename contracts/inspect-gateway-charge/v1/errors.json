@@ -1,0 +1,8 @@
+{"errors": [
+  {"type": "InvalidInspectionInput", "nonRetryable": true},
+  {"type": "UnsupportedContractVersion", "nonRetryable": true},
+  {"type": "GatewayRequestRejected", "nonRetryable": true},
+  {"type": "GatewayUnavailable", "nonRetryable": false},
+  {"type": "ChargePending", "nonRetryable": false},
+  {"type": "CircuitOpen", "nonRetryable": false}
+]}

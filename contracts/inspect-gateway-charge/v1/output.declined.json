@@ -1,0 +1,1 @@
+{"contractVersion":1,"outcome":"declined","charge":{"chargeId":"ch_01","amount":1999,"currency":"EUR","declineReason":"insufficient_funds"},"matchesExpected":false,"checkedAt":"2026-11-25T10:15:30.123+00:00"}

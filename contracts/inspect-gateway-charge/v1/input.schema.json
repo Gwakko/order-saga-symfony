@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://order-saga-symfony.local/contracts/inspect-gateway-charge/v1/input.schema.json",
+  "title": "InspectGatewayCharge input, contract version 1",
+  "type": "object",
+  "required": ["contractVersion", "orderId", "idempotencyKey", "expected"],
+  "properties": {
+    "contractVersion": {"const": 1},
+    "orderId": {"type": "string", "format": "uuid"},
+    "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9-]+$"},
+    "expected": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": {"type": "integer", "minimum": 1, "maximum": 100000000},
+        "currency": {"enum": ["EUR", "USD", "PLN", "UAH"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

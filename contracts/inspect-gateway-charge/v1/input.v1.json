@@ -1,0 +1,1 @@
+{"contractVersion": 1, "orderId": "0190a5c4-0000-7000-8000-000000000020", "idempotencyKey": "0190a5c4-0000-7000-8000-0000000000a1", "expected": {"amount": 1999, "currency": "EUR"}}
