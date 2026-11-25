@@ -242,3 +242,19 @@ func (r *reader) oneOf(key, def string, allowed ...string) string {
 
 	return def
 }
+
+// LoadHealth reads only the health settings. The healthcheck binary uses it so that it does not need the rest of the
+// worker configuration.
+func LoadHealth(lookup Lookup) (Health, error) {
+	r := &reader{lookup: lookup}
+	h := Health{Addr: r.str("HEALTH_ADDR", ":8090")}
+
+	if err := checkHostPort(h.Addr, true); err != nil {
+		r.fail("HEALTH_ADDR %q: %v", h.Addr, err)
+	}
+	if len(r.errs) > 0 {
+		return Health{}, errors.Join(r.errs...)
+	}
+
+	return h, nil
+}

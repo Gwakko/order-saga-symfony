@@ -119,6 +119,35 @@ services:
       temporal:
         condition: service_started
 
+  # Go worker (M9): InspectGatewayCharge on its own task queue. Profile `go`, not `workers`:
+  # `docker compose --profile go up -d worker-go`. A plain `up` and `make smoke` do not build or start it.
+  # The queue name comes from the environment (test isolation, M8a): GO_WORKER_TASK_QUEUE=payment-go-test-<hex> docker compose ...
+  worker-go:
+    build:
+      context: ./worker-go
+    profiles: ["go"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      GO_WORKER_TASK_QUEUE: ${GO_WORKER_TASK_QUEUE:-payment-go}
+      GATEWAY_BASE_URL: http://gateway-emulator:8081
+      LOG_FORMAT: json
+    depends_on:
+      temporal:
+        condition: service_started
+      gateway-emulator:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 20s
+    restart: unless-stopped
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+
   # Go toolchain for worker-go tests (M9). Not started by `up`: `docker compose run --rm go-toolchain ...` (make go-test).
   # The whole repository is mounted at /src because the Go tests read the golden files from /src/contracts.
   go-toolchain:
@@ -129,6 +158,8 @@ services:
       - .:/src
       - go_mod_cache:/go/pkg/mod
       - go_build_cache:/root/.cache/go-build
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
 
 volumes:
   postgres_data:

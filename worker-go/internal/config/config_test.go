@@ -137,3 +137,20 @@ func TestLoadTreatsBlankAsUnset(t *testing.T) {
 		t.Fatalf("cfg=%+v err=%v", cfg, err)
 	}
 }
+
+// Group: T-GO-05
+func TestLoadHealthReadsOnlyHealthAddr(t *testing.T) {
+	h, err := config.LoadHealth(func(string) (string, bool) { return "", false })
+	if err != nil || h.Addr != ":8090" {
+		t.Fatalf("defaults: %+v %v", h, err)
+	}
+
+	h, err = config.LoadHealth(func(k string) (string, bool) { return "127.0.0.1:9000", k == "HEALTH_ADDR" })
+	if err != nil || h.Addr != "127.0.0.1:9000" {
+		t.Fatalf("override: %+v %v", h, err)
+	}
+
+	if _, err = config.LoadHealth(func(k string) (string, bool) { return "nope", k == "HEALTH_ADDR" }); err == nil {
+		t.Fatal("expected an error for a bad address")
+	}
+}

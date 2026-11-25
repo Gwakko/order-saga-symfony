@@ -2,7 +2,7 @@
 PHP ?= docker compose exec -T php
 GO_RUN ?= docker compose run --rm -T go-toolchain
 
-.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage go-test ci smoke
+.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage go-test go-test-int go-build go-up go-down ci smoke
 
 help:
 	@grep -E "^[a-z-]+:" Makefile | cut -d: -f1
@@ -60,6 +60,24 @@ check-coverage:
 go-test:
 	$(GO_RUN) sh -c 'test -z "$$(gofmt -l .)" && go vet ./... && go test -race -count=1 ./...'
 
+# Go integration tests (build tag `integration`) against the compose `temporal` dev server. Each test uses its own random
+# task queues and an in-process fake gateway. Needs `docker compose up -d temporal`.
+go-test-int:
+	docker compose up -d temporal
+	$(GO_RUN) go test -race -count=1 -tags=integration ./...
+
+# Builds the worker-go image.
+go-build:
+	docker compose --profile go build worker-go
+
+# Starts / stops the Go worker (profile `go`; queue GO_WORKER_TASK_QUEUE, default payment-go).
+go-up:
+	docker compose --profile go up -d --build worker-go
+
+go-down:
+	docker compose --profile go stop worker-go
+	docker compose --profile go rm -f worker-go
+
 ci:
 	$(PHP) composer validate --strict
 	$(MAKE) cs
@@ -68,6 +86,7 @@ ci:
 	$(MAKE) test-unit
 	$(MAKE) go-test
 	$(MAKE) test-int
+	$(MAKE) go-test-int
 	$(MAKE) test-wf
 	$(MAKE) test-func
 
