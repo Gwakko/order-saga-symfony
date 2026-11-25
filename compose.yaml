@@ -119,5 +119,18 @@ services:
       temporal:
         condition: service_started
 
+  # Go toolchain for worker-go tests (M9). Not started by `up`: `docker compose run --rm go-toolchain ...` (make go-test).
+  # The whole repository is mounted at /src because the Go tests read the golden files from /src/contracts.
+  go-toolchain:
+    image: golang:1.27.3-bookworm
+    profiles: ["tools"]
+    working_dir: /src/worker-go
+    volumes:
+      - .:/src
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+
 volumes:
   postgres_data:
+  go_mod_cache:
+  go_build_cache:

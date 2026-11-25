@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 PHP ?= docker compose exec -T php
+GO_RUN ?= docker compose run --rm -T go-toolchain
 
-.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage ci smoke
+.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage go-test ci smoke
 
 help:
 	@grep -E "^[a-z-]+:" Makefile | cut -d: -f1
@@ -55,12 +56,17 @@ test-func:
 check-coverage:
 	$(PHP) bin/check-edge-case-coverage
 
+# Go worker (M9): gofmt, vet and tests with the race detector in the go-toolchain container (module and build caches are volumes).
+go-test:
+	$(GO_RUN) sh -c 'test -z "$$(gofmt -l .)" && go vet ./... && go test -race -count=1 ./...'
+
 ci:
 	$(PHP) composer validate --strict
 	$(MAKE) cs
 	$(MAKE) check-coverage
 	$(MAKE) phpstan
 	$(MAKE) test-unit
+	$(MAKE) go-test
 	$(MAKE) test-int
 	$(MAKE) test-wf
 	$(MAKE) test-func
