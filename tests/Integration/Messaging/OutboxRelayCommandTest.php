@@ -14,8 +14,7 @@ final class OutboxRelayCommandTest extends IntegrationTestCase
 {
     public function testOnceDrainsTheOutboxAndExits(): void
     {
-        $redis = new \Redis();
-        $redis->connect('redis', 6379);
+        $redis = self::connectRedis();
         $redis->del('domain_events_test');
 
         $ids = $this->seedOutbox(5);

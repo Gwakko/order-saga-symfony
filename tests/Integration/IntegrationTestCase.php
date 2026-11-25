@@ -128,4 +128,16 @@ abstract class IntegrationTestCase extends KernelTestCase
 
         return $ids;
     }
+
+    /** Redis client for the test environment: host/port from REDIS_URL (compose: `redis`, CI: 127.0.0.1). */
+    protected static function connectRedis(): \Redis
+    {
+        $url = $_SERVER['REDIS_URL'] ?? $_ENV['REDIS_URL'] ?? 'redis://redis:6379';
+        $parts = parse_url(is_string($url) ? $url : 'redis://redis:6379');
+
+        $redis = new \Redis();
+        $redis->connect($parts['host'] ?? 'redis', $parts['port'] ?? 6379);
+
+        return $redis;
+    }
 }

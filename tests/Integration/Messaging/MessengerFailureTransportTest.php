@@ -50,10 +50,7 @@ final class MessengerFailureTransportTest extends IntegrationTestCase
 
     private function redis(): \Redis
     {
-        $redis = new \Redis();
-        $redis->connect('redis', 6379);
-
-        return $redis;
+        return self::connectRedis();
     }
 
     private function message(string $id, string $eventType = 'OrderPlaced'): OutboxMessage

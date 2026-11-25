@@ -41,8 +41,7 @@ final class ProjectionEndToEndTest extends IntegrationTestCase
     {
         parent::setUp();
 
-        $redis = new \Redis();
-        $redis->connect('redis', 6379);
+        $redis = self::connectRedis();
         $redis->del('domain_events_test', 'domain_events_failed_test');
         PoisonAwareOutboxHandler::$handled = [];
         PoisonAwareOutboxHandler::$poisonAttempts = 0;
