@@ -1,6 +1,6 @@
 {
-    "name": "pet/eneba-order-saga",
-    "description": "Order fulfillment saga pet project: Symfony, DBAL, Temporal.",
+    "name": "example/order-saga-symfony",
+    "description": "Order fulfillment saga example: Symfony, DBAL, Temporal.",
     "type": "project",
     "license": "proprietary",
     "minimum-stability": "stable",

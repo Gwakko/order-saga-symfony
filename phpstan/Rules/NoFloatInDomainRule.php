@@ -57,7 +57,7 @@ final readonly class NoFloatInDomainRule implements Rule
 
         return [
             RuleErrorBuilder::message(sprintf('%s is forbidden in Domain/Application; use integer minor units (Money).', ucfirst($problem)))
-                ->identifier('eneba.noFloatInDomain')
+                ->identifier('saga.noFloatInDomain')
                 ->line($node->getStartLine())
                 ->build(),
         ];

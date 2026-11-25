@@ -82,7 +82,7 @@ final class WorkflowDeterminismRule implements Rule
 
         return [
             RuleErrorBuilder::message($violation . ' is not allowed in workflow code: a replay must take the same decisions (use Workflow::now(), Workflow::uuid() or an activity).')
-                ->identifier('eneba.workflowDeterminism')
+                ->identifier('saga.workflowDeterminism')
                 ->build(),
         ];
     }

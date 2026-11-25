@@ -35,7 +35,7 @@ final readonly class NoSwitchRule implements Rule
 
         return [
             RuleErrorBuilder::message('switch is forbidden, use match.')
-                ->identifier('eneba.noSwitch')
+                ->identifier('saga.noSwitch')
                 ->build(),
         ];
     }

@@ -1,4 +1,6 @@
-# eneba-order-saga
+# order-saga-symfony
+
+Пример: что показывает. Сага на Temporal, outbox/inbox, CQRS, GraphQL, собственные правила PHPStan.
 
 Пет-проект, проверен локально (`make ci` в контейнерах), не production. Прогона в GitHub Actions не было. Учебная реализация заказа цифрового ключа: сага на Temporal, компенсации, идемпотентность, outbox/inbox, circuit breaker вокруг платёжного шлюза, CQRS с read model и GraphQL, собственные правила PHPStan. Работает на Docker Compose; нагрузочных цифр и опыта эксплуатации нет (см. раздел «Чего нет и что не проверено»).
 
@@ -145,6 +147,10 @@ REST: `POST /api/orders`, `GET /api/orders/{id}`, `GET /api/orders`, `POST /api/
 - Go-воркер (M9) не сделан.
 - Не проверялись: запуск контейнера с `APP_ENV=prod` и introspection в нём вручную, свежий `docker compose up` на другой ОС (разрабатывалось на OrbStack), веб-интерфейс Temporal.
 - Rate limiting и persisted queries в GraphQL не реализованы (есть лимиты глубины и сложности запроса).
+
+## Как сделан
+
+Спецификация и код писались поэтапно с помощью AI-ассистентов (Claude). Каждый этап автор проверял прогоном тестов. Отчёты по этапам лежат в `docs/reports/`.
 
 ## Документация
 

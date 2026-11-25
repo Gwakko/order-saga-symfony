@@ -57,7 +57,7 @@ final readonly class ReadonlyValueObjectRule implements Rule
 
         return [
             RuleErrorBuilder::message(sprintf('Class %s %s (value objects, domain classes and DTOs are `final readonly`).', $name, $problem))
-                ->identifier('eneba.readonlyValueObject')
+                ->identifier('saga.readonlyValueObject')
                 ->build(),
         ];
     }

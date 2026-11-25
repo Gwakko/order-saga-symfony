@@ -50,7 +50,7 @@ final readonly class DomainNoFrameworkAttributesRule implements Rule
                         'Attribute #[%s] is a framework attribute and is not allowed in Domain/Application; map it in the infrastructure layer.',
                         $node->name->toString(),
                     ))
-                        ->identifier('eneba.domainFrameworkAttribute')
+                        ->identifier('saga.domainFrameworkAttribute')
                         ->build(),
                 ];
             }

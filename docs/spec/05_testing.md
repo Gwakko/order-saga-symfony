@@ -167,7 +167,7 @@ PHPUnit выбран вместо Pest: атрибуты `#[DataProvider]`, `#[G
 | Выразительность (например «workflow не вызывает `time()`») | только зависимости классов | только зависимости | любая |
 | Стоимость | низкая | низкая, но второй инструмент в CI | средняя |
 
-**Решение:** phpat для зависимостей между слоями и модулями (одна команда `vendor/bin/phpstan analyse`, всё в PHPStan max) + **собственные правила PHPStan** для того, что зависимостями не выражается. Это заодно закрывает пункт вакансии про custom PHPStan rules. Deptrac — альтернатива, если phpat не поддержит нужный селектор; синтаксис API phpat (`PHPat::rule()`, `Selector::inNamespace`, `shouldNotDependOn`) проверить в M1 по README `carlosas/phpat`.
+**Решение:** phpat для зависимостей между слоями и модулями (одна команда `vendor/bin/phpstan analyse`, всё в PHPStan max) + **собственные правила PHPStan** для того, что зависимостями не выражается. Это заодно закрывает потребность в собственных правилах PHPStan. Deptrac — альтернатива, если phpat не поддержит нужный селектор; синтаксис API phpat (`PHPat::rule()`, `Selector::inNamespace`, `shouldNotDependOn`) проверить в M1 по README `carlosas/phpat`.
 
 ### 4.2 Правила зависимостей (phpat)
 

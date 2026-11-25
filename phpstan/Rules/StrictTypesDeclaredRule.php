@@ -39,7 +39,7 @@ final class StrictTypesDeclaredRule implements Rule
 
         return [
             RuleErrorBuilder::message('File must declare strict_types=1.')
-                ->identifier('eneba.strictTypesMissing')
+                ->identifier('saga.strictTypesMissing')
                 ->line($statements[0]->getStartLine())
                 ->build(),
         ];

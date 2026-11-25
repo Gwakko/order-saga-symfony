@@ -50,7 +50,7 @@ final class NoSystemClockRule implements Rule
 
         return [
             RuleErrorBuilder::message($violation . ' reads the system clock; use ClockInterface or pass the time as an argument.')
-                ->identifier('eneba.noSystemClock')
+                ->identifier('saga.noSystemClock')
                 ->build(),
         ];
     }
