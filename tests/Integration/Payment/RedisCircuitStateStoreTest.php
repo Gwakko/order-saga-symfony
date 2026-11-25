@@ -184,13 +184,16 @@ final class RedisCircuitStateStoreTest extends TestCase
      */
     private static function database(): Connection
     {
+        $url = $_SERVER['DATABASE_URL'] ?? $_ENV['DATABASE_URL'] ?? 'postgresql://app:app@postgres:5432/app';
+        $parts = parse_url(is_string($url) ? $url : 'postgresql://app:app@postgres:5432/app');
+
         return DriverManager::getConnection([
             'driver' => 'pdo_pgsql',
-            'host' => 'postgres',
-            'port' => 5432,
-            'dbname' => 'app',
-            'user' => 'app',
-            'password' => 'app',
+            'host' => $parts['host'] ?? 'postgres',
+            'port' => $parts['port'] ?? 5432,
+            'dbname' => ltrim($parts['path'] ?? '/app', '/'),
+            'user' => $parts['user'] ?? 'app',
+            'password' => $parts['pass'] ?? 'app',
         ]);
     }
 }
