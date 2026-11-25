@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 PHP ?= docker compose exec -T php
 
-.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage ci
+.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage ci smoke
 
 help:
 	@grep -E "^[a-z-]+:" Makefile | cut -d: -f1
@@ -62,3 +62,7 @@ ci:
 	$(MAKE) test-int
 	$(MAKE) test-wf
 	$(MAKE) test-func
+
+# E2E smoke over the compose stack (starts the `workers` profile, stops what it started). Not part of `make ci`.
+smoke:
+	tests/E2E/smoke.sh
