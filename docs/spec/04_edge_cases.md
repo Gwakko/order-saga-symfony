@@ -163,3 +163,29 @@
 | EC-90 | Идемпотентность и некорректный вход | `POST /api/orders` с ошибкой валидации (422), неизвестным полем, битым JSON (400) или некорректным значением (id, сумма, валюта) | ответ не сохраняется, строка `in_progress` удаляется; тот же ключ можно использовать с исправленным телом (уточнение EC-08: сохраняются только 2xx и бизнес-ошибки: 404 `PRODUCT_NOT_FOUND`, 409 `PRICE_CHANGED` и т. п.) | — | T-M8A-02, T-M8A-03, T-M8A-04, T-M8A-05 (T-F-06 без изменений) |
 | EC-91 | Introspection в dev/test и лимит глубины | полный introspection-запрос GraphiQL (глубина 11) при включённом introspection | проходит: поддеревья `__schema`/`__type` не считаются в глубину; остальные поля по-прежнему ограничены 8; в `prod` introspection выключен (400, `Introspection is not allowed`), лимит глубины действует без исключения | — | T-M8A-01, T-F-30 |
 | EC-92 | Повторная запись событий агрегата в outbox | агрегат (`KeyReservation`, `ProductKey`, `Payment`) сохранён, затем продолжен и сохранён снова | в outbox попадает только событие нового перехода; дубликата `outbox_messages_pkey` нет. `Order` в такой ситуации отказывает по CAS (`ConcurrencyConflict`) без дублей | INV-10 | T-M8A-06 … T-M8A-13 |
+
+## L. Добавлено в M9
+
+Случаи Go-воркера и ветки `InspectGatewayCharge` из `docs/spec/09_go_worker.md` §10; существующие строки не менялись. Идентификаторы тестов: `T-GO-NN` (Go, комментарий `// Group: T-GO-NN` над тестом в `worker-go/**/*_test.go`), `T-M9-NN`, `T-W-NN`, `T-CFG-01` (PHPUnit). `T-M9-10`…`T-M9-13` идут только в `make test-go-e2e` (группа `go-e2e`, вне `make ci`); `bin/check-edge-case-coverage` помечает такие строки `e2e`.
+
+| ID | Случай | Условие | Ожидаемое поведение | Инвариант | Тест |
+|---|---|---|---|---|---|
+| EC-93 | Go-воркер не запущен | нет поллеров на `payment-go` | `InspectGatewayCharge` ждёт ScheduleToStart 20 с → `TimeoutFailure(SCHEDULE_TO_START)`, без повторов → поведение M8; warning в лог workflow с типом таймаута. Алерт (ручная проверка): `temporal task-queue describe --task-queue payment-go` без поллеров, healthcheck контейнера `unhealthy` | INV-08 | T-GO-25, T-W-28, T-M9-12 |
+| EC-94 | PHP новее Go | PHP шлёт `contractVersion: 2`, Go знает 1 | `UnsupportedContractVersion`, non-retryable → поведение M8, error-лог | — | T-GO-11, T-W-28 |
+| EC-95 | Go новее PHP | Go знает 1 и 2, PHP шлёт 1 | ответ в версии 1, golden v1 проходит | — | T-GO-09, T-M9-02 |
+| EC-96 | Ответ позже StartToClose | вызов шлюза или воркер медленнее 15 с | попытка считается проваленной, повтор; поздний результат отбрасывается сервером; эффектов нет (только `GET`) | — | T-GO-23 |
+| EC-97 | Дубль вызова | повтор Temporal или два экземпляра Go | только `GET`; recovery `ChargePayment` с тем же `Idempotency-Key`; у шлюза `executed = 1` | INV-06 | T-GO-08, T-GO-24, T-M9-11 |
+| EC-98 | Неизвестный исход инспекции | шлюз 5xx, таймаут, обрыв, `pending`, нечитаемый ответ, breaker открыт | повтор до ScheduleToClose 60 с → поведение M8 | INV-08 | T-GO-06, T-GO-07, T-GO-22, T-W-28 |
+| EC-99 | Списание есть, но не то | `succeeded`, сумма или валюта не совпали (`wrong-amount`, `wrong-currency`) | `matchesExpected=false` → поведение M8 (`RefundPayment` найдёт и вернёт, ср. EC-36/EC-37); заказ не завершается | INV-02, INV-08, INV-18 | T-GO-02, T-W-25 |
+| EC-100 | Шлюз доказал отказ | `declined` | `Failed(PaymentDeclined)` с компенсациями; `Unknown` платёж закроет `ReconcilePayments` | — | T-GO-02, T-W-26 |
+| EC-101 | Большой payload | тело ответа шлюза > 64 KiB; длинный `declineReason` | > лимита = `GatewayUnavailable`; `declineReason` ≤ 256 байт; вход и выход активности фиксированного размера, лимиты Temporal на payload не приближаются | — | T-GO-06, T-GO-12 |
+| EC-102 | Часовой пояс и формат времени | `TZ=Europe/Kyiv` у Go-процесса | `checkedAt` в UTC с `+00:00` и мс; workflow не принимает решений по `checkedAt` | INV-12 | T-GO-16, T-M9-02 |
+| EC-103 | Деньги не целые | шлюз вернул `19.99`, `"1999"`, 0, число вне int64; PHP получил float | нечитаемый ответ (`GatewayUnavailable`) в Go; `InspectionContractViolation` в PHP → поведение M8 | INV-01 | T-GO-06, T-GO-15, T-M9-02 |
+| EC-104 | Перезапуск Go-воркера посреди активности | процесс убит после начала вызова | повтор после StartToClose на любом экземпляре; результат тот же | — | T-GO-24 |
+| EC-105 | Graceful shutdown | `SIGTERM` (compose stop) | приём новых задач прекращён, текущая активность завершается в пределах `WORKER_STOP_TIMEOUT` (10 с < `stop_grace_period` 20 с), код 0 | — | T-GO-17, T-GO-26 |
+| EC-106 | Неверная конфигурация Go | нет `GO_WORKER_TASK_QUEUE`, `GATEWAY_TIMEOUT=30s` и т. п.; Temporal недоступен при старте | список всех ошибок в stderr, код 2, к Temporal не подключается; недоступный Temporal: код 1, `restart: unless-stopped`; healthcheck `unhealthy` | — | T-GO-05 |
+| EC-107 | Флаг выключен | значение по умолчанию | `PrepareChargeInspection` → `inspect=false`, Go не вызывается, исход как в M8 | — | T-W-23, T-M9-13 |
+| EC-108 | Старые истории | workflow, начатые до M9, доходят до ветки при replay | `getVersion` = `DEFAULT_VERSION`, новых команд нет | — | T-W-21, T-W-20 |
+| EC-109 | Неверная конфигурация PHP | пустая `go_task_queue`, `non_retryable_types` не по регулярке, TTL меньше суммы | `InvalidSagaConfiguration` при сборке контейнера | — | T-M9-05, T-CFG-01 |
+| EC-110 | Отмена во время инспекции | сигнал `requestCancellation` пришёл в ветке | recovery подтверждает оплату, guard перед `ConsumeReservation` → `RefundPayment` + `ReleaseReservation` → `Cancelled` | INV-08 | T-W-31 |
+| EC-111 | Резерв истёк к моменту recovery | recovery `ChargePayment` → `ReservationNotActive` | `Failed(ReservationExpired)` с компенсациями | INV-14, INV-08 | T-W-30 |

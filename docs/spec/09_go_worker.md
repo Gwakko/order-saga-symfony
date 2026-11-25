@@ -424,7 +424,7 @@ ci:           ... test-unit, go-test, test-int, go-test-int, test-wf, test-func
 - `go-test-int`: Go-тесты с build tag `integration` против compose `temporal` (уникальная очередь `payment-go-gotest-<random>`, свой fake-шлюз `httptest` в процессе теста); без `TEMPORAL_ADDRESS` тест делает `t.Skip`.
 - Локально без Docker: `cd worker-go && go test -race ./...`.
 - Время и кэш: первая загрузка модулей и сборка с `-race` зависят от сети и машины; цифры не обещаются, M9.2/M9.3 записывают фактическое время первого и повторного прогона в отчёт.
-- `test-go-e2e` (скрипт): генерирует суффикс, собирает и запускает `worker-go` с уникальной очередью (`docker compose --profile go run -d`), ждёт healthy, запускает `$(PHP) env TEMPORAL_GO_TASK_QUEUE=... TEMPORAL_GO_INSPECTION_ENABLED=1 vendor/bin/phpunit --group go-e2e`, останавливает только то, что запустил. Группа `go-e2e` исключается из `test-int` (`--exclude-group slow,go-e2e`). Причина вне `ci`: нужна сборка образа и управление контейнером с хоста, прецедент `smoke`.
+- `test-go-e2e` (скрипт): генерирует суффикс, собирает и запускает `worker-go` с уникальной очередью (`docker compose --profile go run -d`), ждёт healthy, запускает `$(PHP) env TEMPORAL_GO_TASK_QUEUE=... TEMPORAL_GO_INSPECTION_ENABLED=1 vendor/bin/phpunit --group go-e2e`, останавливает только то, что запустил. Группа `go-e2e` исключается из `test-int` (`--exclude-group slow --exclude-group go-e2e`: PHPUnit 13 не принимает список через запятую, см. `docs/reports/M9.5.md`). Причина вне `ci`: нужна сборка образа и управление контейнером с хоста, прецедент `smoke`.
 - `bin/check-edge-case-coverage` (M9.5): кроме `tests`/`phpstan` сканирует `worker-go/**/*_test.go` на строки `// Group: T-GO-NN` (тот же формат ID `T-[A-Z0-9]+-…`).
 
 ## 8. Изменения PHP (M9.4)
@@ -583,7 +583,7 @@ Golden-файлы читают и PHP (`tests/Unit/...` через путь от
 |---|---|---|---|
 | Q-M9-1 | Обслуживает ли `ActivityMocker` второй воркер (`payment-go-test`) того же `Testing\WorkerFactory` | пробный тест; иначе запасной вариант §8 | M9.4 (первым делом) |
 | Q-M9-2 | Сравнивает ли replay `taskQueue` активности (M5 в §3.3) | мутация M5 | M9.4 |
-| Q-M9-3 | Как довести `ChargePayment` до исчерпания в e2e за разумное время (5 мин ScheduleToClose на dev-сервере без пропуска времени) | env-переопределение профиля `charge_payment` только для e2e-прогона, либо режим эмулятора; инвариант TTL должен остаться верным | M9.5 |
+| Q-M9-3 | Как довести `ChargePayment` до исчерпания в e2e за разумное время (5 мин ScheduleToClose на dev-сервере без пропуска времени) | env-переопределение профиля `charge_payment` только для e2e-прогона, либо режим эмулятора; инвариант TTL должен остаться верным. **Решено в M9.5:** оба вместе: `TEMPORAL_E2E_CHARGE_SCHEDULE_TO_CLOSE=20` (только `services_test.yaml`, фабрика `tests/Integration/Support/E2eSagaConfiguration`, принимает лишь значение короче настроенного) и режим эмулятора `late-success:32000`; `docs/reports/M9.5.md` | M9.5 |
 | Q-M9-4 | `non_retryable_types` и тип параметра `withNonRetryableExceptions` под PHPStan max | §4.7 | M9.4 |
 | Q-M9-5 | Даёт ли `gobreaker/v2` остаток open-интервала для `NextRetryDelay` | документация и код библиотеки | M9.2 |
 | Q-M9-6 | Версия `go.temporal.io/sdk` на дату работ и совместимость с образом `temporalio/temporal:1.10.1` | `go list -m -json ...@latest`, T-GO-20 | M9.1 / M9.3 |

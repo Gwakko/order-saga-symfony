@@ -5,7 +5,8 @@ declare(strict_types=1);
 
 /**
  * Checks that every edge case (EC-xx) in docs/spec/04_edge_cases.md references only tests
- * that exist as #[Group('T-...')] in tests/ or phpstan/.
+ * that exist as #[Group('T-...')] in tests/ or phpstan/, or as a `// Group: T-GO-NN[, T-...]` comment above a Go test
+ * in worker-go/ (M9, docs/spec/09_go_worker.md section 7).
  *
  * Usage:
  *   bin/check-edge-case-coverage             prints the table, exit code 1 if any EC has a missing test
@@ -13,13 +14,15 @@ declare(strict_types=1);
  *
  * Manual checks are never skipped silently: a row whose test cell mentions a manual step
  * ("ручной", "ревью") is flagged MANUAL and listed in the summary; @group slow is flagged SLOW.
- * The automatic part of such a row must still be found.
+ * The automatic part of such a row must still be found. A test that runs only in `make test-go-e2e`
+ * (PHPUnit group `go-e2e`, not part of `make ci`) is flagged E2E and listed in its own line of the summary.
  */
 
 const EC_FILE = 'docs/spec/04_edge_cases.md';
 const SCAN_DIRS = ['tests', 'phpstan'];
+const GO_DIR = 'worker-go';
 
-/** @return array<string, array{files: list<string>, slow: bool}> */
+/** @return array<string, array{files: list<string>, slow: bool, e2e: bool, go: bool}> */
 function collectGroups(string $root): array
 {
     $groups = [];
@@ -37,16 +40,49 @@ function collectGroups(string $root): array
                 continue;
             }
             $slow = 1 === preg_match('/Group\(\'slow\'\)|@group\s+slow/', $source);
+            $e2e = 1 === preg_match('/Group\(\'go-e2e\'\)/', $source);
             $relative = substr($file->getPathname(), strlen($root) + 1);
             if (false === preg_match_all('/Group\(\'(T-[A-Z0-9]+-[0-9A-Za-z]+)\'\)/', $source, $matches)) {
                 continue;
             }
             foreach ($matches[1] as $id) {
-                $groups[$id] ??= ['files' => [], 'slow' => false];
+                $groups[$id] ??= ['files' => [], 'slow' => false, 'e2e' => true, 'go' => false];
                 if (!in_array($relative, $groups[$id]['files'], true)) {
                     $groups[$id]['files'][] = $relative;
                 }
                 $groups[$id]['slow'] = $groups[$id]['slow'] || $slow;
+                // e2e-only: every file that carries the ID belongs to the go-e2e group.
+                $groups[$id]['e2e'] = $groups[$id]['e2e'] && $e2e;
+            }
+        }
+    }
+
+    // Go tests: a `// Group: T-GO-01, T-GO-02` comment line (several IDs allowed).
+    $goRoot = $root . '/' . GO_DIR;
+    if (is_dir($goRoot)) {
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($goRoot, FilesystemIterator::SKIP_DOTS));
+        foreach ($iterator as $file) {
+            if (!$file instanceof SplFileInfo || !str_ends_with($file->getFilename(), '_test.go')) {
+                continue;
+            }
+            $source = file_get_contents($file->getPathname());
+            if (false === $source) {
+                continue;
+            }
+            $relative = substr($file->getPathname(), strlen($root) + 1);
+            if (false === preg_match_all('#^\s*//\s*Group:\s*(.+)$#m', $source, $lines)) {
+                continue;
+            }
+            foreach ($lines[1] as $line) {
+                preg_match_all('/T-[A-Z0-9]+-[0-9A-Za-z]+/', $line, $ids);
+                foreach ($ids[0] as $id) {
+                    $groups[$id] ??= ['files' => [], 'slow' => false, 'e2e' => false, 'go' => true];
+                    $groups[$id]['go'] = true;
+                    $groups[$id]['e2e'] = false;
+                    if (!in_array($relative, $groups[$id]['files'], true)) {
+                        $groups[$id]['files'][] = $relative;
+                    }
+                }
             }
         }
     }
@@ -103,14 +139,21 @@ if ([] === $rows) {
 $missingRows = [];
 $manualRows = [];
 $slowRows = [];
+$e2eRows = [];
+$e2eIds = [];
 $table = [];
 foreach ($rows as $row) {
     $parts = [];
     $missing = [];
     $slow = false;
+    $e2e = false;
     foreach ($row['ids'] as $id) {
         $found = isset($groups[$id]);
         $slow = $slow || ($found && $groups[$id]['slow']);
+        if ($found && $groups[$id]['e2e']) {
+            $e2e = true;
+            $e2eIds[$id] = true;
+        }
         if (!$found) {
             $missing[] = $id;
         }
@@ -127,6 +170,10 @@ foreach ($rows as $row) {
     if ($slow) {
         $flags[] = 'slow';
         $slowRows[] = $row['ec'];
+    }
+    if ($e2e) {
+        $flags[] = 'e2e';
+        $e2eRows[] = $row['ec'];
     }
     if ([] !== $missing) {
         $missingRows[] = $row['ec'] . ': ' . implode(', ', $missing);
@@ -150,6 +197,10 @@ $bad = count($missingRows);
 echo "\nEC всего: {$total}; с найденными тестами: " . ($total - $bad) . "; без теста: {$bad}\n";
 echo 'Ручные проверки (автоматическая часть тоже обязана быть найдена): ' . ([] === $manualRows ? 'нет' : implode(', ', $manualRows)) . "\n";
 echo 'Медленные (@group slow, вне make ci, запуск make test-slow): ' . ([] === $slowRows ? 'нет' : implode(', ', $slowRows)) . "\n";
+echo 'Только в make test-go-e2e (группа go-e2e, вне make ci): ' . ([] === $e2eRows ? 'нет' : implode(', ', $e2eRows) . ' (тесты: ' . implode(', ', array_keys($e2eIds)) . ')') . "\n";
+$allE2e = array_keys(array_filter($groups, static fn(array $g): bool => $g['e2e']));
+sort($allE2e);
+echo 'Все тесты группы go-e2e, найденные в коде (часть может не входить ни в один EC): ' . ([] === $allE2e ? 'нет' : implode(', ', $allE2e)) . "\n";
 if ([] !== $missingRows) {
     echo "\nНЕ НАЙДЕНЫ:\n  " . implode("\n  ", $missingRows) . "\n";
     exit(1);

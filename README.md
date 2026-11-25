@@ -75,8 +75,11 @@ CQRS:   write: command -> handler -> aggregate -> DBAL repo + outbox (одна �
 make up                          # docker compose up -d: php, nginx (8080), postgres, redis, temporal (7233, UI 8233), gateway-emulator, temporal-worker
 make install                     # composer install в контейнере
 make wf-install                  # один раз: скачать temporal-test-server (около 83 MB) для набора workflow
-make ci                          # composer validate, cs, check-coverage, phpstan, unit, integration, workflow, functional
+make ci                          # composer validate, cs, check-coverage, phpstan, unit, go-test, integration, go-test-int, workflow, functional
 make smoke                       # E2E-проверка поверх compose (tests/E2E/smoke.sh), в make ci не входит
+make go-test                     # Go-воркер: gofmt, go vet, тесты с -race в контейнере go-toolchain (входит в make ci)
+make go-test-int                 # Go-воркер против compose-сервера Temporal (входит в make ci)
+make test-go-e2e                 # PHP-сага против настоящего Go-воркера (tests/E2E/go-e2e.sh), около 2,5 минут, в make ci не входит
 make test-wf                     # только workflow-тесты (Temporal test server)
 make test-slow                   # медленные интеграционные (T-I-43: обрыв сессий БД под работающей сагой, около 15 с)
 bin/check-edge-case-coverage     # у каждого EC из docs/spec/04_edge_cases.md есть существующий тест
@@ -101,6 +104,20 @@ REST: `POST /api/orders`, `GET /api/orders/{id}`, `GET /api/orders`, `POST /api/
 
 Подробно: `docs/spec/03_saga.md`.
 
+## Go-воркер (M9)
+
+Одна активность саги, `InspectGatewayCharge`, написана на Go (`worker-go/`, Temporal Go SDK) и обслуживается отдельным процессом на своей task queue (`payment-go`). Она только читает: делает `GET /charges/{idempotencyKey}` у шлюза и отвечает, есть ли списание, на какую сумму и в какой валюте. Идёт она после того, как `ChargePayment` исчерпал повторы с неизвестным исходом (таймаут, обрыв, 5xx: деньги могли списаться). Если шлюз подтверждает списание на ожидаемую сумму, сага повторяет `ChargePayment` с тем же идемпотентным ключом (шлюз второй раз не списывает), записывает успех и доводит заказ до `Completed`. Если шлюз доказывает отказ, заказ получает `Failed(PaymentDeclined)`. Любой другой исход (ошибка Go, таймаут, списания нет, чужая сумма) оставляет прежнее поведение саги. Существующие активности в Go не переносились: они пишут в БД PHP. Контракт PHP и Go: `contracts/inspect-gateway-charge/v1/` (JSON-схемы и golden-файлы, которые читают обе стороны). Спецификация: `docs/spec/09_go_worker.md`.
+
+Как включить:
+
+```bash
+docker compose --profile go up -d --build worker-go   # профиль go: make up и make smoke Go-воркер не собирают и не запускают (make go-up / go-down)
+TEMPORAL_GO_INSPECTION_ENABLED=1                        # переменная окружения PHP-воркера и приложения; по умолчанию 0, ветка выключена
+make test-go-e2e                                        # поднимает Go-воркер на уникальной очереди, прогоняет группу PHPUnit go-e2e, останавливает и удаляет контейнер
+```
+
+Ветка стоит под `Workflow::getVersion('gateway-inspection')`: истории, начатые до неё, проигрываются без новых команд (replay-тесты по сохранённым историям `v0` и `v1`). Если Go-воркер не запущен при включённом флаге, активность ждёт 20 с (ScheduleToStart) и сага продолжает как до M9. Сквозные тесты `make test-go-e2e` доводят `ChargePayment` до исчерпания за 20 с вместо 300: переменная `TEMPORAL_E2E_CHARGE_SCHEDULE_TO_CLOSE` читается только конфигурацией окружения `test`, принимает лишь значение короче настроенного, поэтому инвариант TTL резерва (660 с < 900 с) остаётся верным.
+
 ## Ключевые решения
 
 | Решение | Почему |
@@ -120,14 +137,17 @@ REST: `POST /api/orders`, `GET /api/orders/{id}`, `GET /api/orders`, `POST /api/
 
 | Набор | Что проверяет | Тестов |
 |---|---|---|
-| unit | домен, application, правила PHPStan, конфигурация | 941 |
-| integration | реальные Postgres, Redis, эмулятор шлюза, Temporal dev-сервер; без группы `slow` | 242 |
-| workflow | `OrderFulfillmentWorkflow`, `RefundWorkflow` на Temporal test server, replay | 28 (1 пропущен: запись фикстуры) |
+| unit | домен, application, правила PHPStan, конфигурация, контракт Go-воркера | 1009 |
+| integration | реальные Postgres, Redis, эмулятор шлюза, Temporal dev-сервер; без групп `slow` и `go-e2e` | 249 |
+| workflow | `OrderFulfillmentWorkflow`, `RefundWorkflow` на Temporal test server, replay | 52 (3 пропущены: методы записи фикстур) |
 | functional | HTTP и GraphQL через `KernelBrowser` | 160 |
 | slow | `T-I-43`, `make test-slow`, в `make ci` не входит | отдельный запуск |
+| Go unit | `make go-test`: домен, use case, HTTP-адаптер, breaker, контракт, активность, конфигурация, архитектурные проверки | 66 функций `Test*` |
+| Go integration | `make go-test-int`: настоящий воркер против dev-сервера Temporal | 8 (T-GO-20…26, код выхода 2 при плохой конфигурации) |
 | E2E smoke | `make smoke`, в `make ci` не входит | 4 сценария |
+| E2E Go-воркер | `make test-go-e2e` (группа `go-e2e`, вне `make ci`): `T-M9-10`…`T-M9-13` | 3 теста, 4 идентификатора |
 
-Дополнительно: `bin/check-edge-case-coverage` подтверждает, что у каждого из 103 крайних случаев (EC) есть найденный в коде тест; карта: `docs/spec/08_coverage.md`. Скрипт проверяет наличие идентификатора, а не качество теста. Качество разобрано выборочно, с ручной мутационной проверкой пяти критичных EC (`docs/reports/M8b.md`).
+Дополнительно: `bin/check-edge-case-coverage` подтверждает, что у каждого из 122 крайних случаев (EC) есть найденный в коде тест; карта: `docs/spec/08_coverage.md`. Скрипт проверяет наличие идентификатора, а не качество теста. Качество разобрано выборочно, с ручной мутационной проверкой пяти критичных EC (`docs/reports/M8b.md`).
 
 ## Чего нет и что не проверено
 
@@ -144,7 +164,11 @@ REST: `POST /api/orders`, `GET /api/orders/{id}`, `GET /api/orders`, `POST /api/
 - Аутентификация покупателя заглушка: идентификатор берётся из заголовка `X-Customer-Id`, токенов и проверки владельца за пределами этого заголовка нет. Шифрования кодов ключей в БД нет.
 - Нет команды или эндпоинта для наполнения каталога товарами и ключами (`smoke.sh` делает SQL-вставки); после создания товара его доступность в `order_view`-проекции появляется после первого события резервации.
 - Symfony 8.1 не LTS: по данным `bin/console about` на момент M1.1 конец поддержки 01/2027.
-- Go-воркер (M9) не сделан.
+- Go-воркер: replay-тест не сравнивает имя очереди Go-воркера (Q-M9-2: мутация, меняющая очередь активности `InspectGatewayCharge` на очередь саги, оставила replay зелёным). Опечатку в имени очереди поймают только `T-M9-05` (опции профиля) и сквозные тесты `make test-go-e2e`.
+- Go-воркер: типы non-retryable ошибок Go (`InvalidInspectionInput`, `UnsupportedContractVersion`, `GatewayRequestRejected`) записываются в `RetryOptions` через `ReflectionProperty`. Это обход проверки `assert(is_a(..., Throwable))` в `RetryOptions::withNonRetryableExceptions()` Temporal PHP SDK: у этих типов нет PHP-класса. Прямая запись в свойство отклоняется PHPStan на уровне max.
+- Флаг `TEMPORAL_GO_INSPECTION_ENABLED` по умолчанию выключен: без него Go-воркер простаивает, а сага работает как до M9.
+- Go-ветка проверена на dev-сервере Temporal (`temporalio/temporal:1.10.1`, `server start-dev`), а не в конфигурации, близкой к боевой: без кластера, постоянного хранилища, нескольких экземпляров Go-воркера и реального шлюза. Сквозные тесты используют укороченный дедлайн `ChargePayment` (20 с вместо 300 с), только в окружении `test`.
+- `make test-go-e2e` не входит в `make ci` (собирает образ и управляет контейнером с хоста); прогон зависит от времени (в сценариях ждут реальные таймауты), на нагруженной машине границы по времени могут не выдержаться.
 - Не проверялись: запуск контейнера с `APP_ENV=prod` и introspection в нём вручную, свежий `docker compose up` на другой ОС (разрабатывалось на OrbStack), веб-интерфейс Temporal.
 - Rate limiting и persisted queries в GraphQL не реализованы (есть лимиты глубины и сложности запроса).
 
@@ -154,6 +178,6 @@ REST: `POST /api/orders`, `GET /api/orders/{id}`, `GET /api/orders`, `POST /api/
 
 ## Документация
 
-- Спецификация: `docs/spec/` ([обзор](docs/spec/00_overview.md), [домен](docs/spec/01_domain.md), [use cases](docs/spec/02_use_cases.md), [сага](docs/spec/03_saga.md), [крайние случаи](docs/spec/04_edge_cases.md), [тесты](docs/spec/05_testing.md), [этапы](docs/spec/06_milestones.md), [открытые вопросы](docs/spec/07_open_questions.md), [карта покрытия](docs/spec/08_coverage.md)).
-- Отчёты по этапам: `docs/reports/` (`M1.1` ... `M8c`; про нестабильный тест: `M8a-flaky.md`).
-- Эмулятор шлюза и его режимы: `gateway-emulator/README.md`.
+- Спецификация: `docs/spec/` ([обзор](docs/spec/00_overview.md), [домен](docs/spec/01_domain.md), [use cases](docs/spec/02_use_cases.md), [сага](docs/spec/03_saga.md), [крайние случаи](docs/spec/04_edge_cases.md), [тесты](docs/spec/05_testing.md), [этапы](docs/spec/06_milestones.md), [открытые вопросы](docs/spec/07_open_questions.md), [карта покрытия](docs/spec/08_coverage.md), [Go-воркер](docs/spec/09_go_worker.md)).
+- Отчёты по этапам: `docs/reports/` (`M1.1` ... `M9.5`; про нестабильный тест: `M8a-flaky.md`).
+- Эмулятор шлюза и его режимы: `gateway-emulator/README.md`. Контракт Go-воркера: `contracts/inspect-gateway-charge/v1/README.md`.

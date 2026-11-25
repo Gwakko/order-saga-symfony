@@ -20,9 +20,10 @@ final class TemporalTestWorker
     private ?Process $process = null;
 
     /**
-     * @param non-empty-string $temporalAddress
+     * @param non-empty-string      $temporalAddress
+     * @param array<string, string> $environment     extra variables of the worker process (the go-e2e test sets the Go queue, the inspection flag and the shortened ChargePayment deadline)
      */
-    public function start(string $temporalAddress): void
+    public function start(string $temporalAddress, array $environment = []): void
     {
         $root = dirname(__DIR__, 3);
 
@@ -32,7 +33,7 @@ final class TemporalTestWorker
         $this->process = new Process(
             ['rr', 'serve', '-c', $root . '/.rr.yaml', '-o', 'rpc.listen=tcp://127.0.0.1:6002', '-o', 'logs.level=error'],
             $root,
-            ['APP_ENV' => 'test', 'APP_DEBUG' => '0', 'TEMPORAL_ADDRESS' => $temporalAddress, 'TEMPORAL_TASK_QUEUE' => TemporalTestQueue::name()],
+            [...$environment, 'APP_ENV' => 'test', 'APP_DEBUG' => '0', 'TEMPORAL_ADDRESS' => $temporalAddress, 'TEMPORAL_TASK_QUEUE' => TemporalTestQueue::name()],
         );
         $this->process->start();
 

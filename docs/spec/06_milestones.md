@@ -208,15 +208,18 @@
 - **На выходе:** `tests/E2E/smoke.sh`, `README.md` (что это, «пет-проект, проверен локально и в CI, не production», схема слоёв, запуск, ссылки на спецификацию, раздел «чего нет»), ссылки на `symfony-notification-api`, `nestjs-payments-api` при пересечении.
 - **Проверка:** `docker compose up -d && tests/E2E/smoke.sh`; `grep -iE "rps|requests per second|production-ready|в продакшене" README.md` пусто.
 
-## M9. Go-воркер (необязательно)
+## M9. Go-воркер (сделан по `09_go_worker.md`, отчёты `docs/reports/M9.1.md`…`M9.5.md`)
 
-### M9.0 Спецификация (Opus)
-- **Цель:** `docs/spec/08_go_worker.md`: какая активность (рекомендация `ChargePayment` или новая `NotifyKeyDelivered`), task queue, контракт входа/выхода (JSON, совместимость data converter PHP↔Go), доступ к БД или отдельный сервис, тесты.
-- **Вход:** `03_saga.md` §8, `memory/course-arch-conventions` правила Go.
+Фактически вместо переноса `ChargePayment` на другую очередь добавлена новая активность `InspectGatewayCharge` (Go, только чтение), спецификация `docs/spec/09_go_worker.md`. Каталог проекта `worker-go/` (не `go-worker/`), спецификация не `08_go_worker.md`.
 
-### M9.1 Реализация (Sonnet)
-- **На выходе:** `go-worker/` (`cmd/worker/main.go` тонкий, `internal/app`, Input/Output + `Validate()`), сервис в Compose, `getVersion` в workflow.
-- **Проверка:** `cd go-worker && go test ./... && go vet ./...`; `make test-wf`.
+- M9.0 спецификация `09_go_worker.md` (Opus).
+- M9.1 контракт `contracts/inspect-gateway-charge/v1/`, golden-файлы, PHP-маппинг, фикстура `history-charge-exhausted-v0.json` (T-M9-01…04, T-W-21).
+- M9.2 Go-ядро: use case, домен, HTTP-адаптер, circuit breaker; `make go-test` (T-GO-01…08, 12…16).
+- M9.3 Go-воркер, Dockerfile, профиль compose `go`, интеграционные тесты `make go-test-int` (T-GO-05, 09…11, 17, 20…26).
+- M9.4 ветка в саге под `getVersion` и флагом, `PrepareChargeInspection`, фикстура `history-charge-inspected-v1.json`, мутационная таблица (T-M9-04…06, T-W-22…32).
+- M9.5 сквозные тесты `make test-go-e2e` (T-M9-10…13, вне `make ci`), EC-93…EC-111 в `04_edge_cases.md`, сканер Go-тестов в `bin/check-edge-case-coverage`, документация.
+
+Не закрыто (честно): replay не сравнивает имя очереди Go-воркера (Q-M9-2), опечатку в нём ловят T-M9-05 и сквозные тесты; ветка проверена только на dev-сервере Temporal; флаг выключен по умолчанию.
 
 ## M10. Итоговый набор материалов (основная сессия)
 Схема, 5 решений с обоснованием (модульный монолит vs сервисы; неизменяемые агрегаты + DBAL; сигнал отмены vs Temporal cancel; outbox для старта саги; свой breaker + обработка неизвестного исхода оплаты), список «чего нет» (`00_overview.md` §2). Не исполнитель этапа.

@@ -2,7 +2,7 @@
 PHP ?= docker compose exec -T php
 GO_RUN ?= docker compose run --rm -T go-toolchain
 
-.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage go-test go-test-int go-build go-up go-down ci smoke
+.PHONY: help up down install wf-install wf-record-history phpstan cs cs-fix test-unit test-int test-slow test-wf test-func check-coverage go-test go-test-int go-build go-up go-down ci smoke test-go-e2e
 
 help:
 	@grep -E "^[a-z-]+:" Makefile | cut -d: -f1
@@ -40,7 +40,7 @@ test-unit:
 	$(PHP) vendor/bin/phpunit --testsuite unit
 
 test-int:
-	$(PHP) vendor/bin/phpunit --testsuite integration --exclude-group slow
+	$(PHP) vendor/bin/phpunit --testsuite integration --exclude-group slow --exclude-group go-e2e
 
 # Slow integration tests (T-I-43: kills the database sessions under a running saga, about 15 s). Not part of `make ci`.
 test-slow:
@@ -93,3 +93,8 @@ ci:
 # E2E smoke over the compose stack (starts the `workers` profile, stops what it started). Not part of `make ci`.
 smoke:
 	tests/E2E/smoke.sh
+
+# PHP saga against the real Go worker (M9.5): starts the `go` profile worker on a queue of its own, runs PHPUnit group go-e2e,
+# stops and removes what it started. About four minutes (the scenarios wait for real timeouts). Not part of `make ci`.
+test-go-e2e:
+	tests/E2E/go-e2e.sh

@@ -1,3 +1,7 @@
+parameters:
+    # M9.5: shortens ScheduleToClose of ChargePayment for `make test-go-e2e` only (tests/Integration/Support/E2eSagaConfiguration.php); 0 = as configured.
+    env(TEMPORAL_E2E_CHARGE_SCHEDULE_TO_CLOSE): '0'
+
 services:
     _defaults:
         autowire: true
@@ -47,3 +51,16 @@ services:
         class: Doctrine\DBAL\Logging\Middleware
         arguments: ['@App\Tests\Functional\Support\SqlRecorder']
         tags: [doctrine.middleware]
+
+    # The test table of timeouts: the same as `config/services.yaml`, plus the e2e-only shortening of ChargePayment (M9.5, Q-M9-3).
+    App\Saga\Infrastructure\Temporal\Config\SagaConfiguration:
+        public: true
+        factory: ['App\Tests\Integration\Support\E2eSagaConfiguration', 'create']
+        arguments:
+            $taskQueue: '%temporal.task_queue%'
+            $workflowExecutionTimeoutSeconds: '%temporal.order_workflow.execution_timeout_seconds%'
+            $activities: '%temporal.activities%'
+            $reservationTtlSeconds: '%inventory.reservation_ttl_seconds%'
+            $chargeGuardSeconds: '%payment.charge_guard_seconds%'
+            $refundWorkflowExecutionTimeoutSeconds: '%temporal.refund_workflow.execution_timeout_seconds%'
+            $chargeScheduleToCloseOverride: '%env(int:TEMPORAL_E2E_CHARGE_SCHEDULE_TO_CLOSE)%'

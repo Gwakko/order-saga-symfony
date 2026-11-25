@@ -155,6 +155,10 @@ PHPUnit выбран вместо Pest: атрибуты `#[DataProvider]`, `#[G
 
 Проверка покрытия: скрипт `bin/check-edge-case-coverage` (M8) парсит `04_edge_cases.md`, собирает все `T-*` и ищет их в `tests/` (атрибут `#[Group('T-U-01')]` на тесте или docblock). Каждый EC без найденного теста → ненулевой код выхода.
 
+### 3.6 Go-воркер (M9)
+
+Полные таблицы с описаниями: `docs/spec/09_go_worker.md` §9. Идентификаторы: Go `T-GO-01`…`T-GO-17` (`make go-test`, комментарий `// Group: T-GO-NN` над тестом), `T-GO-20`…`T-GO-26` (`make go-test-int`, тег `integration`); PHP `T-M9-01`…`T-M9-06`, `T-W-21`…`T-W-32`, `T-CFG-01`; сквозные `T-M9-10`…`T-M9-13` (`make test-go-e2e`, группа `go-e2e`, вне `make ci`). Крайние случаи EC-93…EC-111 (`04_edge_cases.md`, раздел L). `bin/check-edge-case-coverage` читает и `worker-go/**/*_test.go`, и группу `go-e2e`, строки с тестами только для `make test-go-e2e` помечает `e2e`.
+
 ## 4. Правила PHPStan
 
 ### 4.1 Инструмент для границ слоёв: сравнение

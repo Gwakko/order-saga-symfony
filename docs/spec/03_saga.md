@@ -124,6 +124,13 @@ Heartbeat не используется: все активности корот�
 | Потеря соединения с БД в долгоживущем воркере | перед каждой активностью проверка соединения и переподключение (DBAL: проверить механизм в M6.1, например middleware/`ping` эквивалент); между активностями сброс сервисов (`services_resetter`) |
 | Изменение кода workflow при запущенных экземплярах | `Workflow::getVersion` на месте изменения; replay-тест по сохранённой истории (T-W-20) |
 
-## 8. Go-воркер (M9, необязательно)
+## 8. Go-воркер (M9)
 
-Активность `ChargePayment` выносится на task queue `payment-go`; Go-воркер (Temporal Go SDK) вызывает тот же эмулятор шлюза и пишет в ту же таблицу `payments` (или в свой сервис, решение в спецификации M9). Workflow меняет только task queue в опциях активности (под `getVersion`). Отдельная спецификация M9 пишется Opus.
+Итоговое решение и все подробности: `docs/spec/09_go_worker.md`. Сначала предполагалось вынести `ChargePayment` на task queue `payment-go`; это отвергнуто: активность пишет в БД PHP (`payments`, `product_keys`), а Go-воркеру БД не отдаётся. Вместо переноса существующих активностей добавлена **новая** активность `InspectGatewayCharge`, которую обслуживает Go-воркер (очередь `payment-go`, профиль `inspect_gateway_charge`): только чтение, `GET /charges/{idempotencyKey}` у шлюза.
+
+- Ветка включается, только когда `ChargePayment` исчерпан с неизвестным исходом (EC-34, классификатор даёт `PaymentUnavailable`), под `Workflow::getVersion('gateway-inspection')` и флагом `TEMPORAL_GO_INSPECTION_ENABLED` (по умолчанию выключен; читает PHP-активность `PrepareChargeInspection`, не код workflow).
+- `succeeded` с совпавшей суммой и валютой: повторный `ChargePayment` с тем же идемпотентным ключом (профиль `charge_recovery`) и обычное продолжение саги; `declined`: `Failed(PaymentDeclined)` с компенсациями; всё остальное (ошибка Go, любой таймаут, `not_found`, несовпадение, нарушение контракта) оставляет поведение M8.
+- Go-воркер не запущен: `InspectGatewayCharge` ждёт ScheduleToStart 20 с и без повторов уступает поведению M8 (EC-93, T-M9-12).
+- Старые истории проигрываются без новых команд (`DEFAULT_VERSION`, EC-108, T-W-20, T-W-21); история с веткой записана как `history-charge-inspected-v1.json` (T-W-22).
+- Инвариант TTL резерва с новыми слагаемыми: 60 + 300 + 60 + 60 + 60 + 60 + 60 = 660 < 900 (T-CFG-01).
+- Контракт PHP и Go: `contracts/inspect-gateway-charge/v1/`, golden-файлы читают обе стороны.
